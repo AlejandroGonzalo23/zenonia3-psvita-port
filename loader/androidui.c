@@ -1,48 +1,5 @@
-/*
- * androidui.c
- *
- * El logo de Gamevil, el fondo de titulo y el fondo + botones del menu
- * principal (New Game/Continue/Options/Help/About/Community) del APK
- * original NO los dibuja el .so nativo -- son ImageView/ImageButton de
- * Android superpuestos al GLSurfaceView (ver res/layout/main.xml y
- * com/gamevil/nexus2/Natives.java: showTitleComponent()/showMenuComponent()/
- * showMenuItemComponent()). Este loader no tiene ninguna capa Java/Android
- * (es un soloader puro), asi que esas 3 pantallas se veian en blanco (logo)
- * y despues negro (titulo/menu) -- lo unico que se dibujaba de fondo era el
- * DrawFillRect blanco propio del .so (CMvTitleState::DrawZeroGrade/
- * DrawTeamLogo, out_ghidra.c:105397/105434), sin el arte real encima.
- *
- * Solucion: replicar esos overlays a mano con texturas GL, usando los PNG
- * reales del APK (variantes "globales"/en ingles -- no las _kr/_jp/_ch),
- * decodificados en runtime con stb_image (lib/stb/stb_image.h, mismo
- * mecanismo de vendoring que stb_truetype para font.c) -- no hace falta
- * ningun paso de conversion previo, el port solo necesita los PNG reales
- * del APK (zenonia3/res/drawable/).
- *
- * Los PNG NO se empaquetan en el VPK (ver CMakeLists.txt) -- se leen desde
- * memoria externa (ux0:data/zenonia3/drawable/), subidos ahi por FTP con
- * manage_vita.py (upload_external_assets()). Esto mantiene el VPK sin
- * material con copyright y evita reinstalar el paquete entero cada vez que
- * cambia un PNG. app0:drawable/ (adentro del VPK) sigue funcionando como
- * fallback si alguien arma un build local que sí los empaqueta.
- *
- * Posiciones: NO son inventadas -- salen de leer el codigo Java real
- * (com/gamevil/nexus2/Natives.java, showMenuItemComponent()) que calcula los
- * margenes de los 6 botones del menu como fraccion de
- * `displayWidth`/`displayHeight` sobre una base de 400x240 -- exactamente la
- * misma resolucion logica (GAME_W/GAME_H) que ya usa este loader para todo
- * lo demas. La unica rama que cambia esos valores (`displayWidth >= 1024`)
- * no aplica en Vita (960 < 1024), asi que los botones quedan a su tamano
- * NATIVO de PNG (82x61), igual que en cualquier telefono real de la epoca
- * con esa resolucion -- no es una aproximacion, es literalmente lo que hacia
- * el codigo original en ese branch.
- *
- * Excepcion marcada abajo: el margen superior de "ui_menu_back1" (franja
- * decorativa arriba del menu) esta hardcodeado en el XML como "142px" (no
- * calculado en Java como los demas), asi que su base de escala real no esta
- * 100% confirmada -- se aproxima usando la altura nativa del propio PNG
- * (320, no 240) como referencia. No bloqueante: "ui_menu_back0" ya cubre
- * toda la pantalla de fondo, esta franja es puramente decorativa.
+/**
+ * @brief Which menu button (if any) falls under (sx,sy).
  */
 
 #include <stdio.h>
@@ -85,18 +42,9 @@ static androidui_tex g_tex_reply_bg      = { "reply_page_back_e.png" };
 static androidui_tex g_tex_btn_write     = { "button_write_01_global.png" };
 static androidui_tex g_tex_btn_later     = { "button_later_01_global.png" };
 
-// Panel de texto de ABOUT/HELP: el rect de Android para
-// aboutWebView/helpWebView (leftMargin=1/400, topMargin=5/240, width=300/400,
-// height=146/240) resulto NO alinear con el cuadro gris real de
-// ui_about_bg.png/ui_help_bg.png (confirmado visualmente por el usuario --
-// texto pegado arriba a la izquierda, superpuesto al marco/titulo). Estos 2
-// PNG son fondo fitXY a pantalla completa, asi que su propio espacio de
-// pixeles (480x320, el tamano nativo del PNG) mapea 1:1 a fracciones de
-// pantalla -- medido con Pillow sobre el PNG real (buscando el borde del
-// cuadro gris oscuro): interior util en x=[27,452] y=[43,300] (misma
-// geometria en las 2 imagenes, mismo template). Se le resta un margen extra
-// (~13-14px) para no tocar el marco decorativo ni superponerse con el
-// titulo "ABOUT" horneado en el banner superior.
+/**
+ * @brief ui_status==5000 (UI_STATUS_REPLY_PAGE): "rate the app" popup that Natives.
+ */
 #define INFO_IMG_W 480.0f
 #define INFO_IMG_H 320.0f
 #define INFO_BOX_LEFT_PX 40.0f
@@ -105,12 +53,9 @@ static androidui_tex g_tex_btn_later     = { "button_later_01_global.png" };
 #define INFO_BOX_H_PX   235.0f
 #define INFO_FONT_PX 15.0f
 
-// Centro horizontal + linea de base del titulo "ABOUT" horneado en
-// ui_about_bg.png (medido buscando los pixeles de texto mas brillantes del
-// banner: bbox x=[123,358] y=[18,39] sobre 480x320 -> centro (240, 28)).
-// ui_help_bg.png tiene el MISMO banner pero vacio (el titulo era un TextView
-// de Android aparte, Natives.showHelpAboutTitleTextComponent()) -- se dibuja
-// "HELP" ahi mismo a mano, unicamente para esta pantalla.
+/**
+ * @brief ui_status==5000 (UI_STATUS_REPLY_PAGE): "rate the app" popup that Natives.
+ */
 #define INFO_TITLE_CENTER_X_PX 240.0f
 #define INFO_TITLE_CENTER_Y_PX 28.0f
 
@@ -119,11 +64,7 @@ static htmlview *g_help_text = NULL;
 static htmlview *g_help_title = NULL;
 
 static int androidui_load_one(androidui_tex *t) {
-    // Los PNG con copyright del APK original ya NO se empaquetan en el VPK
-    // (ver CMakeLists.txt) -- se leen desde ux0:data/zenonia3/, subidos a
-    // mano por FTP (manage_vita.py opcion de subir assets). Se mantiene un
-    // fallback a app0: (VPK) solo por si alguien arma un build local que si
-    // los empaqueta.
+/**< @brief ui_status==5000 (UI_STATUS_REPLY_PAGE): "rate the app" popup that Natives. */
     char primary_path[256];
     char fallback_path[256];
     snprintf(primary_path, sizeof(primary_path), "ux0:data/zenonia3/drawable/%s", t->name);
@@ -182,15 +123,15 @@ void androidui_load(int screen_w, int screen_h) {
     float panel_w_px = INFO_BOX_W_PX * (float) screen_w / INFO_IMG_W;
     g_about_text = htmlview_load("about", panel_w_px, INFO_FONT_PX);
     g_help_text = htmlview_load("help_eng", panel_w_px, INFO_FONT_PX);
-    // "HELP" a mano en el banner vacio de ui_help_bg.png -- ABOUT ya lo trae
-    // horneado en ui_about_bg.png, ver Natives.showHelpAboutTitleTextComponent().
+/**
+ * @brief "HELP" by hand on the empty ui_help_bg banner.
+ */
     g_help_title = htmlview_make_label("HELP", 18.0f, 0xFFFFFFFFu);
 }
 
-// Dibuja un quad con esquina superior-izquierda en (x,y) y tamano (w,h) en
-// espacio de pantalla (proyeccion ortografica 0..screen_w / 0..screen_h ya
-// activa -- ver androidui_draw()). GL_BLEND habilitado: la mayoria de estos
-// PNG son RGBA reales (botones/franjas con transparencia).
+/**
+ * @brief Draw a quad with top-left corner at (x,y) and size (w,h) at.
+ */
 static void androidui_draw_quad(androidui_tex *t, float x, float y, float w, float h) {
     if (!t->tex) return;
 
@@ -204,11 +145,9 @@ static void androidui_draw_quad(androidui_tex *t, float x, float y, float w, flo
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-// Basado en com/gamevil/nexus2/Natives.java: showMenuItemComponent(). Todas
-// las fracciones son sobre 400 (ancho) / 240 (alto) -- misma base logica
-// GAME_W/GAME_H de main.c. La rama `displayWidth >= 1024` de ese metodo no
-// aplica en Vita (960 < 1024), asi que el tamano de cada boton queda en su
-// resolucion nativa de PNG (82x61).
+/**
+ * @brief Based on com/gamevil/nexus2/Natives.
+ */
 typedef struct { androidui_tex *tex; float top240; float left400; } menu_btn_pos;
 static const menu_btn_pos MENU_BUTTONS[] = {
     { &g_tex_btn_community, 100, 25 },
@@ -220,9 +159,7 @@ static const menu_btn_pos MENU_BUTTONS[] = {
 };
 #define MENU_BUTTON_COUNT (sizeof(MENU_BUTTONS) / sizeof(MENU_BUTTONS[0]))
 
-// Mismo array MENU_BUTTONS de arriba, pero indexado por el enum publico para
-// poder recalcular el rect real (en espacio de pantalla) sin duplicar las
-// fracciones 400/240.
+/**< @brief Same MENU_BUTTONS array as above, but indexed by the public enum for. */
 static const androidui_menu_hit MENU_BUTTON_HIT[] = {
     ANDROIDUI_MENU_HIT_COMMUNITY,
     ANDROIDUI_MENU_HIT_OPTIONS,
@@ -247,10 +184,7 @@ androidui_menu_hit androidui_menu_hit_test(float sx, float sy, int screen_w, int
     return ANDROIDUI_MENU_HIT_NONE;
 }
 
-// Basado en Natives.java: showReplyMoveComponent() -- img_btn_write_Layout/
-// img_btn_later_Layout, misma base logica 400x240. REPLY_OFFSET_TOPMARGIN_0
-// (170) es comun a ambos botones; REPLY_OFFSET_LEFTMARGIN_0 (20, "escribir
-// resena") y REPLY_OFFSET_LEFTMARGIN_1 (180, "mas tarde") los separan.
+/**< @brief Based on Natives. */
 androidui_reply_hit androidui_reply_hit_test(float sx, float sy, int screen_w, int screen_h) {
     float sw = (float) screen_w, sh = (float) screen_h;
     float top = 170.0f * sh / 240.0f;
@@ -270,10 +204,7 @@ androidui_reply_hit androidui_reply_hit_test(float sx, float sy, int screen_w, i
     return ANDROIDUI_REPLY_HIT_NONE;
 }
 
-// Basado en main.xml: "uiback" (drawable ui_menu_back) tiene
-// layout_gravity="top|right", wrap_content, sin margin -- queda pegado a la
-// esquina superior derecha a su tamano nativo de PNG. Compartido por ABOUT
-// (ui_status==5) y HELP (ui_status==4): misma vista, misma posicion.
+/**< @brief Based on main. */
 androidui_backbtn_hit androidui_backbtn_hit_test(float sx, float sy, int screen_w, int screen_h) {
     float sw = (float) screen_w;
     float back_x = sw - (float) g_tex_backbtn.w;
@@ -283,8 +214,9 @@ androidui_backbtn_hit androidui_backbtn_hit_test(float sx, float sy, int screen_
     return ANDROIDUI_BACKBTN_HIT_NONE;
 }
 
-// Rect real en pantalla del panel de texto (mismo para ABOUT/HELP, ver la
-// nota junto a los #define INFO_BOX_*/INFO_IMG_*).
+/**
+ * @brief Actual rect on text panel screen (same for ABOUT/HELP, see.).
+ */
 static void info_panel_rect(int screen_w, int screen_h, float *x, float *y, float *w, float *h) {
     *x = INFO_BOX_LEFT_PX * (float) screen_w / INFO_IMG_W;
     *y = INFO_BOX_TOP_PX * (float) screen_h / INFO_IMG_H;
@@ -301,8 +233,9 @@ void androidui_scroll_info_text(int ui_status, float delta_px, int screen_w, int
 }
 
 void androidui_draw(int ui_status, int screen_w, int screen_h) {
-    // Solo se llama para los estados sin arte propio del port (ver main.c).
-    // Nada que dibujar en cualquier otro estado.
+/**
+ * @brief It is only called for states without the port's own art (see main.).
+ */
     if (!(ui_status == -1 || ui_status == 1 || ui_status == 2 || ui_status == 4 || ui_status == 5 || ui_status == 5000)) return;
 
     glMatrixMode(GL_PROJECTION);
@@ -325,21 +258,20 @@ void androidui_draw(int ui_status, int screen_w, int screen_h) {
     float sw = (float) screen_w, sh = (float) screen_h;
 
     if (ui_status == -1) {
-        // LOGO: antes de que llegue el primer OnUIStatusChange real.
+/**< @brief LOGO: before the first real OnUIStatusChange arrives. */
         androidui_draw_quad(&g_tex_logo, 0, 0, sw, sh);
     } else if (ui_status == 1) {
-        // TITLE: fondo completo + logo chico centrado abajo (bottom|center_horizontal, tamano nativo).
+/**
+ * @brief TITLE: full background + small logo centered below (bottom|center_horizontal, native size).
+ */
         androidui_draw_quad(&g_tex_title_bg, 0, 0, sw, sh);
         float lw = sh > 0 ? (float) g_tex_title_logo5.w : 0; // tamano nativo, sin escalar
         float lh = (float) g_tex_title_logo5.h;
         androidui_draw_quad(&g_tex_title_logo5, (sw - lw) / 2.0f, sh - lh, lw, lh);
     } else if (ui_status == 2) {
-        // MAINMENU: fondo completo + franja superior + 6 botones.
+/**< @brief MAINMENU: full background + top strip + 6 buttons. */
         androidui_draw_quad(&g_tex_menu_back0, 0, 0, sw, sh);
-        // ui_menu_back1: marginTop="142px" hardcodeado en el XML (no
-        // calculado en Java como los demas) -- aproximado sobre la altura
-        // nativa del propio PNG (320, no 240). Ancho estirado a pantalla
-        // completa (match_parent), alto nativo (wrap_content).
+/**< @brief ui_menu_back1: marginTop="142px" hardcodeado en el XML (no.). */
         float back1_y = 142.0f * sh / 320.0f;
         androidui_draw_quad(&g_tex_menu_back1, 0, back1_y, sw, (float) g_tex_menu_back1.h);
         for (unsigned int i = 0; i < MENU_BUTTON_COUNT; i++) {
@@ -349,20 +281,12 @@ void androidui_draw(int ui_status, int screen_w, int screen_h) {
             androidui_draw_quad(b->tex, bx, by, (float) b->tex->w, (float) b->tex->h);
         }
     } else if (ui_status == 5 || ui_status == 4) {
-        // ABOUT (5) / HELP (4): fondo + boton "back" arriba a la derecha +
-        // el texto que Android mostraba en un WebView encima de ese mismo
-        // fondo, ahora parseado/rasterizado por htmlview.c (about.html /
-        // help_eng.html originales) -- ver port_progress.md. Circulo
-        // (HAL_KEY_BACK), tocar el boton, o D-pad arriba/abajo para scrollear
-        // (ver androidui_scroll_info_text(), llamado desde main.c).
+/**< @brief Error 500 (Server Error). */
         androidui_draw_quad(ui_status == 5 ? &g_tex_about_bg : &g_tex_help_bg, 0, 0, sw, sh);
         androidui_draw_quad(&g_tex_backbtn, sw - (float) g_tex_backbtn.w, 0,
                              (float) g_tex_backbtn.w, (float) g_tex_backbtn.h);
         if (ui_status == 4 && g_help_title) {
-            // ui_help_bg.png trae el banner superior VACIO (a diferencia de
-            // ui_about_bg.png, que ya tiene "ABOUT" horneado) -- dibujar
-            // "HELP" a mano, centrado en la misma posicion que ocupaba el
-            // TextView de Android.
+/**< @brief ui_help_bg. */
             float lw, lh;
             htmlview_native_size(g_help_title, &lw, &lh);
             float cx = INFO_TITLE_CENTER_X_PX * sw / INFO_IMG_W;
@@ -373,14 +297,10 @@ void androidui_draw(int ui_status, int screen_w, int screen_h) {
         float px, py, pw, ph;
         info_panel_rect(screen_w, screen_h, &px, &py, &pw, &ph);
         htmlview_draw(ui_status == 5 ? g_about_text : g_help_text, px, py, pw, ph);
-        // htmlview_draw() cambia el blend func para el alpha premultiplicado
-        // del texto (ver htmlview.c) -- restaurar el de este archivo por si
-        // se agrega algo despues en este mismo branch.
+/**< @brief htmlview_draw() changes the blend func for the premultiplied alpha. */
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     } else if (ui_status == 5000) {
-        // REPLY_PAGE: popup de "valorar la app" que se muestra al tocar
-        // Continuar en el menu (Natives.showReplyMoveComponent()) -- fondo +
-        // boton "escribir resena" + boton "mas tarde".
+/**< @brief REPLY_PAGE: "Rate the app" popup displayed when tapped. */
         androidui_draw_quad(&g_tex_reply_bg, 0, 0, sw, sh);
         float top = 170.0f * sh / 240.0f;
         androidui_draw_quad(&g_tex_btn_write, 20.0f * sw / 400.0f, top,

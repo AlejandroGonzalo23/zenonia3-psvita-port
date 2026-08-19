@@ -1,14 +1,5 @@
-/*
- * java.c
- *
- * "Java-side" native method handlers that libgameDSO.so (Zenonia 3, mismo
- * motor Gamevil Nexus2/Clet que Zenonia 2) llama de vuelta vía FalsoJNI
- * (GetStaticMethodID + CallStaticObjectMethod/CallStaticIntMethod/etc).
- * Todo lo que no se registra aca simplemente queda "not found" para
- * FalsoJNI (logueado, no fatal para metodos void/Object -- ver
- * plan_zenonia3_port.md seccion "Riesgos" y port_progress.md de Zenonia2
- * §9.10 para el caso contrario: metodos int/boolean SI son peligrosos si
- * no se registran).
+/**
+ * @brief java.c "Java-side" native method handlers that libgameDSO.so (Zenonia 3, same Gamevil Nexus2/Clet engine Zenonia 2) calls back via FalsoJNI.
  */
 
 #include <falso_jni/FalsoJNI_Impl.h>
@@ -26,13 +17,9 @@
 
 extern void game_log(const char *fmt, ...);
 
-// readAssets/isAssetExist se llaman siempre con el mismo path relativo (el
-// motor llama isAssetExist(path) antes de decidir si vale la pena llamar
-// readAssets(path)), asi que ambos deben resolver igual. Igual que en
-// Zenonia 2: probar primero el path pelado (ux0:data/zenonia3/<name>) y si
-// no existe, el prefijado con assets/ (que usan los hooks de dynlib.c para
-// todo lo demas) -- sin asumir cual es la convencion real hasta confirmarla
-// con un log de consola.
+/**
+ * @brief readAssets/isAssetExist are always called with the same relative path (the engine calls isAssetExist(path) before deciding if it's worth).
+ */
 static int zenonia_resolve_asset_path(const char *name, char *out, size_t out_size) {
     snprintf(out, out_size, "ux0:data/zenonia3/%s", name);
     if (access(out, F_OK) == 0) return 1;
@@ -43,30 +30,9 @@ static int zenonia_resolve_asset_path(const char *name, char *out, size_t out_si
     return 0;
 }
 
-// --- Puente para que readAssets sirva a los DOS consumidores distintos que
-// tiene el motor ---
-//
-// El truco de "ArrayObject de Dalvik" (header de 16 bytes + datos crudos,
-// ver Zenonia_readAssets) funciona para el consumidor directo por puntero
-// (MC_knlGetResource y el resto de CMvResourceMgr) porque ese codigo nunca
-// pasa por las funciones estandar de arrays de JNI -- lee offset+16
-// directamente. Pero un consumidor DISTINTO (confirmado real: la familia de
-// parsers "PZx"/"PZD" -- CGxPZDParser/CGxZeroPZDParser -- usada para
-// TouchOemIME.pzx y otros .pzx, ver port_progress.md Fase 3.7) SI llama a
-// GetArrayLength/GetByteArrayElements estandar sobre el mismo resultado de
-// readAssets. Como nuestro bloque no es un JavaDynArray real (no paso por
-// jda_alloc), FalsoJNI no lo encuentra ("Could not find the array") y esos
-// parsers reciben NULL/longitud 0 -- causando un crash rio abajo (puntero
-// NULL asumido valido tras un "exito" a medias del parser).
-//
-// Solucion: interceptar GetArrayLength/GetByteArrayElements/
-// GetByteArrayRegion/ReleaseByteArrayElements de la tabla de funciones JNI
-// (mutable en memoria pese al `const` del tipo publico -- jni_init() la
-// aloca con malloc()) para reconocer nuestros propios bloques (llevando un
-// registro de punteros devueltos por Zenonia_readAssets) y servirlos
-// directamente desde el header Dalvik, cayendo al codigo real de FalsoJNI
-// para cualquier otro array (los JavaDynArray genuinos de jda_alloc, usados
-// por ejemplo en las funciones GFA_* de la Fase 3.5).
+/**
+ * @brief Bridge so that readAssets serves the TWO different consumers that has the engine --- "Dalvik's ArrayObject" trick (16 byte header + raw).
+ */
 #define ZENONIA_DALVIK_REGISTRY_MAX 1024
 static void *g_dalvik_registry[ZENONIA_DALVIK_REGISTRY_MAX];
 static int g_dalvik_registry_count = 0;
@@ -122,8 +88,9 @@ static void Zenonia_ReleaseByteArrayElements_wrapper(JNIEnv *env, jbyteArray arr
     zenonia_orig_ReleaseByteArrayElements(env, array, elems, mode);
 }
 
-// Llamar DESPUES de jni_init() (main.c) -- necesita que la tabla de
-// funciones ya este alocada.
+/**
+ * @brief Call AFTER jni_init() (main.c).
+ */
 void zenonia_install_array_hooks(void) {
     struct JNINativeInterface *funcs = (struct JNINativeInterface *)(uintptr_t) jni;
     zenonia_orig_GetArrayLength = funcs->GetArrayLength;
@@ -136,15 +103,15 @@ void zenonia_install_array_hooks(void) {
     funcs->ReleaseByteArrayElements = Zenonia_ReleaseByteArrayElements_wrapper;
 }
 
-/*
- * JNI Methods
+/**
+ * @brief Call AFTER jni_init() (main.c).
  */
 
 NameToMethodID nameToMethodId[] = {
     { 1, "readAssets", METHOD_TYPE_OBJECT },
-    // Typo real del motor (heredado de Zenonia 2, confirmado en Zenonia 3
-    // con `strings libgameDSO.so`: existen ambas cadenas "readAssets" y
-    // "readAssete" en el binario). Mismo handler para las dos.
+/**
+ * @brief Call AFTER jni_init() (main.c).
+ */
     { 3, "readAssete", METHOD_TYPE_OBJECT },
     { 2, "isAssetExist", METHOD_TYPE_INT },
     { 4, "getGLOptionLinear", METHOD_TYPE_INT },
@@ -153,32 +120,20 @@ NameToMethodID nameToMethodId[] = {
     { 7, "getAbsolueFilePath", METHOD_TYPE_OBJECT },
     { 8, "OnUIStatusChange", METHOD_TYPE_VOID },
     { 9, "OnSoundPlay", METHOD_TYPE_VOID },
-    // No-ops seguros (void): evitan spam de "not found" en el log.
+/**
+ * @brief Real engine type (inherited from Zenonia 2, confirmed in Zenonia 3 with `strings libgameDSO.so`: both strings "readAssets" and "readAssete").
+ */
     { 10, "OnStopSound", METHOD_TYPE_VOID },
     { 11, "hideLoadingDialog", METHOD_TYPE_VOID },
     { 12, "OnShowSaveButton", METHOD_TYPE_VOID },
-    // Nuevos en el UIListener de Zenonia 3 (no existian en Zenonia 2):
-    // OnVibrate(int) y OnEvent(int). Ambos void, ya serian seguros sin
-    // registrar (ver nota de arriba), pero se registran para no spamear
-    // el log y para tener el punto de entrada listo cuando llegue la Fase
-    // de audio/vibracion.
+/**
+ * @brief Real engine type (inherited from Zenonia 2, confirmed in Zenonia 3 with `strings libgameDSO.so`: both strings "readAssets" and "readAssete").
+ */
     { 13, "OnVibrate", METHOD_TYPE_VOID },
     { 14, "OnEvent", METHOD_TYPE_VOID },
-    // --- Puente de fuentes GFA ("Gamevil Font API") -- ver
-    // zenonia3_java/sources/com/gamevil/nexus2/NexusFont.java (implementacion
-    // real via android.graphics.Paint/Canvas/Bitmap) y port_progress.md Fase
-    // 3.4 para el diagnostico completo. CGxFontAndroid::Create() (motor)
-    // llama GFA_CreateFont y solo registra la fuente en CGxFACharCache si el
-    // handle devuelto es >= 0 -- sin registrar, FalsoJNI devuelve -1 para
-    // metodos int no encontrados (mismo patron que isAssetExist en Zenonia2
-    // §9.10), el motor nunca llama a addFont/setFont, y el arbol interno del
-    // char cache queda en NULL -> crash real en el primer findChar() (Data
-    // abort confirmado con vita-parse-core + objdump -d).
-    // NO hay rasterizado real de glifos todavia (Fase de texto real
-    // pendiente): estos stubs replican la maquina de estados de Java
-    // (slots de fuente, tamano/color actual, metricas aproximadas) para que
-    // el motor progrese sin crashear, pero el texto se vera en blanco hasta
-    // implementar un renderizador de fuente bitmap real.
+/**
+ * @brief Real engine type (inherited from Zenonia 2, confirmed in Zenonia 3 with `strings libgameDSO.so`: both strings "readAssets" and "readAssete").
+ */
     { 15, "GFA_IsInitialized", METHOD_TYPE_BOOLEAN },
     { 16, "GFA_Init", METHOD_TYPE_BOOLEAN },
     { 17, "GFA_SetTextSize", METHOD_TYPE_VOID },
@@ -201,44 +156,31 @@ NameToMethodID nameToMethodId[] = {
     { 34, "GFA_SetLocale", METHOD_TYPE_VOID },
     { 35, "GFA_ReleaseFont", METHOD_TYPE_VOID },
     { 36, "GFA_Release", METHOD_TYPE_VOID },
-    // Devuelven float[]/int[]/short[] que el motor desreferencia SIN
-    // chequear NULL -- confirmado con un crash real (Data abort dentro de
-    // GFA_DrawFont) para DrawFont; DrawText/MeasureText comparten la misma
-    // estructura de wrapper nativo (ver port_progress.md Fase 3.5). Object,
-    // NUNCA deben devolver NULL en el camino normal.
+/**
+ * @brief Real engine type (inherited from Zenonia 2, confirmed in Zenonia 3 with `strings libgameDSO.so`: both strings "readAssets" and "readAssete").
+ */
     { 37, "GFA_DrawFont", METHOD_TYPE_OBJECT },
     { 38, "GFA_DrawText", METHOD_TYPE_OBJECT },
     { 39, "GFA_MeasureText", METHOD_TYPE_OBJECT },
     { 40, "GFA_GetPixels32", METHOD_TYPE_OBJECT },
     { 41, "GFA_GetPixels16", METHOD_TYPE_OBJECT },
-    // Alimentan CGsPhoneInfoV2::CheckPhoneNumber() -- ver nota junto a los
-    // handlers mas abajo y port_progress.md Fase 3.6. Sin estos, el motor
-    // nunca construye CGsInputKey/CGsUIMgr/CGsSound/etc.
+/**
+ * @brief Real engine type (inherited from Zenonia 2, confirmed in Zenonia 3 with `strings libgameDSO.so`: both strings "readAssets" and "readAssete").
+ */
     { 42, "getPhoneNumber", METHOD_TYPE_OBJECT },
     { 43, "getSimSerialNumber", METHOD_TYPE_OBJECT },
     { 44, "getMacAddress", METHOD_TYPE_OBJECT },
     { 45, "getDeviceID", METHOD_TYPE_OBJECT },
-    // NexusUtils.getLocaleID(): 1=Corea, 3=Japon, 4=China, 5=Francia, 2=resto.
-    // El consumidor nativo (CMvOptionSaveData, out_ghidra.c:~44978) mapea
-    // 1->idioma coreano, 3->japones, cualquier otro->0 (default/ingles). Sin
-    // registrar, FalsoJNI devolvia -1, que cae en el mismo default -- se
-    // registra con 2 explicito para sacar el [JNI ERR] del log y dejar la
-    // decision documentada (cambiar a 1 si se quiere el juego en coreano).
+/**
+ * @brief Safe no-ops (void): prevent "not found" spam in the log.
+ */
     { 46, "getLocaleID", METHOD_TYPE_INT },
 };
 
-// Estado de UI que reporta el motor via OnUIStatusChange. main.c lo usa para
-// saber cuando dejar de mostrar el splash -- mismo mecanismo que Zenonia 2
-// (logo/titulo eran ImageViews de Java, invisibles en el loader nativo),
-// pendiente confirmar en Fase 5 si Zenonia 3 usa los mismos numeros de
-// estado o si ZenoniaUIControllerView los cambio.
+/**< @brief fstat instead of fseek(SEEK_END)+ftell. */
 volatile int g_ui_status = -1;
 
-// El motor (compilado contra un NDK viejo pre-ART) lee el jbyteArray que
-// esto devuelve accediendo directo al layout interno de ArrayObject de
-// Dalvik (header de 16 bytes + datos crudos) en vez de usar
-// GetByteArrayElements -- mismo mecanismo confirmado para Zenonia 2, y
-// coherente con que Zenonia 3 sea el mismo motor (Fase 1).
+/**< @brief fstat instead of fseek(SEEK_END)+ftell. */
 jobject Zenonia_readAssets(jmethodID id, va_list args) {
     jstring filename = va_arg(args, jstring);
     const char *name = (const char *) filename;
@@ -258,10 +200,9 @@ jobject Zenonia_readAssets(jmethodID id, va_list args) {
         return NULL;
     }
 
-    // fstat en vez de fseek(SEEK_END)+ftell: en Zenonia 2, ftell() devolvio
-    // basura (bytes de la propia ruta) para al menos un archivo real y
-    // corrompio el malloc posterior del motor. fstat no depende de la
-    // posicion del cursor y evita esa clase de bug de raiz.
+/**
+ * @brief Logged because a not found methodID causes methodIntCall() to FalseJNI returns -1 (see FalseJNI_ImplBridge.c).
+ */
     struct stat st;
     long size = -1;
     if (fstat(fileno(f), &st) == 0) {
@@ -290,7 +231,9 @@ jobject Zenonia_readAssets(jmethodID id, va_list args) {
 
     memset(array_obj, 0, 16); // header de ArrayObject de Dalvik en cero
 
-    // Dalvik ArrayObject espera el largo como entero de 32 bits en el offset 8
+/**
+ * @brief Logged because a not found methodID causes methodIntCall() to FalseJNI returns -1 (see FalseJNI_ImplBridge.c).
+ */
     *(uint32_t *)((char *)array_obj + 8) = (uint32_t)size;
 
     fread((char *) array_obj + 16, 1, size, f);
@@ -302,12 +245,7 @@ jobject Zenonia_readAssets(jmethodID id, va_list args) {
     return array_obj;
 }
 
-// Registrado porque un methodID no encontrado hace que methodIntCall() de
-// FalsoJNI devuelva -1 (ver FalsoJNI_ImplBridge.c) -- un valor no-cero que
-// el motor interpreta como booleano C "true" (el archivo existe). Ese falso
-// positivo fue la causa real de un crash en Zenonia 2 (§9.10 de su
-// port_progress.md): el motor seguia adelante cargando un archivo que en
-// realidad no se habia resuelto.
+/**< @brief fstat instead of fseek(SEEK_END)+ftell. */
 jint Zenonia_isAssetExist(jmethodID id, va_list args) {
     jstring filename = va_arg(args, jstring);
     const char *name = (const char *) filename;
@@ -340,31 +278,15 @@ jobject Zenonia_getPhoneModel(jmethodID id, va_list args) {
 }
 
 jobject Zenonia_getAbsolueFilePath(jmethodID id, va_list args) {
-    // El motor tiene el typo "Absolue" en vez de "Absolute" (heredado de
-    // Zenonia 2). Devuelve un string JNI (FalsoJNI lo implementa como char*)
-    // con barra final para que el motor pueda concatenar el nombre del asset.
+/**
+ * @brief Logged because a not found methodID causes methodIntCall() to FalseJNI returns -1 (see FalseJNI_ImplBridge.c).
+ */
     return (jobject) "ux0:data/zenonia3/";
 }
 
-// --- getPhoneNumber/getSimSerialNumber/getMacAddress/getDeviceID ---
-//
-// Causa real de que el motor nunca llegue al menu (rastreada con la skill
-// so-crash-triage, ver port_progress.md Fase 3.6): estos 4 metodos devuelven
-// byte[] via getSystemProperty() -> MC_knlGetSystemProperty(), que a su vez
-// alimenta CGsPhoneInfoV2::CheckPhoneNumber() -- una validacion de
-// operador/SIM tipica de juegos moviles coreanos con DRM de carrier. Sin
-// registrar, devuelven NULL (seguro, no crashea -- el motor chequea NULL
-// antes de copiar), pero deja los 4 buffers de telefono/SIM/MAC/deviceID
-// vacios, y CheckPhoneNumber() falla -> CGsPhoneInfoV2::InitPhoneInfo()
-// devuelve 0 -> CMvApp::EvAppStart() salta la construccion de TODOS los
-// subsistemas del motor (CGsInputKey, CGsUIMgr, CGsSound, CMvResourceMgr,
-// etc., ver disasm real: `if (iVar1==0) return;`) sin crashear ahi mismo --
-// el crash real ocurre mucho despues, en CGsInputKey::SetReleaseKey, cuando
-// CMvApp::EvAppResume asume que ese singleton ya existe.
-//
-// Basta con que getPhoneNumber empiece con "01" + un digito para que
-// CheckPhoneNumber pase de inmediato (numero de celular coreano valido) --
-// se devuelven los otros 3 igual, por si algun otro camino del motor los usa.
+/**
+ * @brief Logged because a not found methodID causes methodIntCall() to FalseJNI returns -1 (see FalseJNI_ImplBridge.c).
+ */
 static jobject zenonia_new_byte_array_str(const char *s) {
     int len = (int) strlen(s);
     JavaDynArray *jda = jda_alloc(len, FIELD_TYPE_BYTE);
@@ -398,9 +320,9 @@ void Zenonia_OnUIStatusChange(jmethodID id, va_list args) {
 void Zenonia_VoidNoop(jmethodID id, va_list args) {
 }
 
-// Firma real: OnSoundPlay(int sndID, int vol, boolean isLoop) -- el segundo
-// parametro es VOLUMEN (0-100, tipico 50/75), el tercero el loop. Los logs
-// viejos los etiquetaban al reves (misma correccion que Zenonia 2 §12.1).
+/**
+ * @brief Actual signature: OnSoundPlay(int sndID, int vol, boolean isLoop).
+ */
 void Zenonia_OnSoundPlay(jmethodID id, va_list args) {
     int snd_id = va_arg(args, int);
     int vol = va_arg(args, int);
@@ -428,11 +350,9 @@ void Zenonia_OnEvent(jmethodID id, va_list args) {
     game_log("[Java] OnEvent: %d\n", event);
 }
 
-// --- Puente GFA (fuentes) -- replica de NexusFont.java con rasterizado REAL
-// via loader/font.c (stb_truetype + app0:font.ttf). La fuente de verdad de
-// cada semantica es NexusFont.java (jadx); el formato de pixeles que consume
-// el motor esta confirmado en out_ghidra.c (CopyPixelsToCharCacheBuffer usa
-// SOLO el canal alfa, stride = ancho del bitmap de GFA_Init).
+/**
+ * @brief GFA bridge (fonts) -- NexusFont.
+ */
 #include "ksc5601_table.h"
 
 #define GFA_MAX_FONTS 5
@@ -445,18 +365,18 @@ static char g_gfa_font_family[GFA_MAX_FONTS][128];
 static int g_gfa_font_used[GFA_MAX_FONTS] = {0};
 static int g_gfa_width = 0, g_gfa_height = 0, g_gfa_bpp = 32;
 static int g_gfa_string_len = 0;
-// String actual (g_strConv de NexusFont) como codepoints Unicode.
+/**< @brief GFA bridge (fonts) -- NexusFont. */
 static uint32_t g_gfa_str[GFA_MAX_STR];
 static int g_gfa_str_n = 0;
-// Buffers de pixeles del "canvas" GFA, persistentes entre llamadas (el motor
-// "libera" con DeleteLocalRef, no-op en FalsoJNI; y jda_alloc devuelve
-// punteros a la tabla global que NO deben cachearse a traves de un realloc
-// -- ver Fase 4.1; con la tabla de 1024 y estos persistentes no hay realloc).
+/**
+ * @brief String decoders (NexusFont receives UTF-8 (jstring), UTF-16LE or EUC-KR/KSC5601 depending on the function).
+ */
 static JavaDynArray *g_gfa_pixels32_jda = NULL;
 static JavaDynArray *g_gfa_pixels16_jda = NULL;
 
-// --- Decodificadores de string (NexusFont recibe UTF-8 (jstring), UTF-16LE
-// o EUC-KR/KSC5601 segun la funcion) ---
+/**
+ * @brief String decoders (NexusFont receives UTF-8 (jstring), UTF-16LE or EUC-KR/KSC5601 depending on the function).
+ */
 
 static int gfa_decode_utf8(const char *s, uint32_t *out, int max) {
     int n = 0;
@@ -514,8 +434,9 @@ static int gfa_decode_euckr(const unsigned char *b, int nbytes, uint32_t *out, i
     return n;
 }
 
-// Metricas con fallback si la fuente no cargo (mismas aproximaciones que los
-// stubs de la Fase 3.4, para que el juego no pierda el layout por completo).
+/**
+ * @brief Metrics with fallback if the source did not load (same approximations as the stubs from Phase 3.4, so that the game does not lose the).
+ */
 static float gfa_char_advance(uint32_t cp) {
     if (gfa_font_ready()) return gfa_font_advance(g_gfa_text_size, cp);
     return g_gfa_text_size * 0.6f;
@@ -526,8 +447,9 @@ static float gfa_text_width_n(const uint32_t *cps, int n) {
     return g_gfa_text_size * 0.6f * n;
 }
 
-// Paint.breakText(text, true, maxWidth): caracteres desde el inicio cuyo
-// avance acumulado entra en maxWidth.
+/**
+ * @brief Paint.breakText(text, true, maxWidth).
+ */
 static int gfa_break_text(const uint32_t *cps, int n, float max_width) {
     if (gfa_font_ready()) return gfa_font_break_text(g_gfa_text_size, cps, n, max_width);
     float w = 0; int i;
@@ -535,11 +457,9 @@ static int gfa_break_text(const uint32_t *cps, int n, float max_width) {
     return i;
 }
 
-// BreakIterator de palabras, aproximado: una frontera despues de cada corrida
-// de espacios, y cada caracter CJK/Hangul es su propia "palabra" (igual que
-// el BreakIterator real para ideografos). Devuelve la cantidad de caracteres
-// hasta la ultima frontera de palabra que entra en fit_chars (breakLength del
-// Java); 0 si ninguna frontera entra.
+/**
+ * @brief Word BreakIterator, approximate.
+ */
 static int gfa_word_break_length(const uint32_t *cps, int n, int fit_chars) {
     int break_len = 0;
     int i = 0;
@@ -563,9 +483,9 @@ static int gfa_word_break_length(const uint32_t *cps, int n, int fit_chars) {
     return break_len;
 }
 
-// Asegura los buffers de pixeles persistentes con el tamano actual de
-// GFA_Init (si el motor re-inicializa con otro tamano, se liberan y realocan
-// -- jda_free deja el slot de la tabla reutilizable sin mover el resto).
+/**
+ * @brief GFA_GetPixels32/16 YES they are safe by construction even if they return a empty array.
+ */
 static JavaDynArray *gfa_pixels32(void) {
     int count = g_gfa_width * g_gfa_height;
     if (count <= 0) count = 1;
@@ -584,7 +504,9 @@ jboolean Zenonia_GFA_IsInitialized(jmethodID id, va_list args) {
     return g_gfa_initialized ? JNI_TRUE : JNI_FALSE;
 }
 
-// (IIIIZI)Z -- width,height,bpp,colorkey,antialias,locale.
+/**
+ * @brief Paint.breakText(text, true, maxWidth).
+ */
 jboolean Zenonia_GFA_Init(jmethodID id, va_list args) {
     g_gfa_width = va_arg(args, int);
     g_gfa_height = va_arg(args, int);
@@ -599,16 +521,16 @@ jboolean Zenonia_GFA_Init(jmethodID id, va_list args) {
     return JNI_TRUE;
 }
 
-// JNI promueve float a double al pasarlo por un va_list variadico (regla del
-// lenguaje C, independiente de la ABI de punto flotante del target) -- por
-// eso se lee con va_arg(args, double) y se castea a float, no al reves.
+/**
+ * @brief JNI promotes float to double when passing it through a variadic va_list (rule of C language, independent of the target's floating point ABI).
+ */
 void Zenonia_GFA_SetTextSize(jmethodID id, va_list args) {
     g_gfa_text_size = (float) va_arg(args, double);
 }
 
-// Replica la reutilizacion de slots de NexusFont.GFA_CreateFont: hasta
-// GFA_MAX_FONTS familias distintas, devuelve el mismo handle si la familia ya
-// esta registrada, -1 si no quedan slots libres (igual que el original).
+/**
+ * @brief Ensure persistent pixel buffers with the current pixel size GFA_Init (if the engine re-initializes with another size, they are released and).
+ */
 jint Zenonia_GFA_CreateFont(jmethodID id, va_list args) {
     jstring fam = va_arg(args, jstring);
     int style = va_arg(args, int);
@@ -645,10 +567,7 @@ jint Zenonia_getLocaleID(jmethodID id, va_list args) {
     return 2; // default no-coreano/no-japones -> idioma 0 del motor
 }
 
-// (F[I)I -- maxWidth, wwPositions[]. Replica exacta del loop de
-// NexusFont.GFA_GetWordwrapPositionEx: mientras el resto no entre en
-// maxWidth, corta en breakText(maxWidth) caracteres, acumula la posicion y
-// la escribe en wwPositions. Devuelve la cantidad de cortes.
+/**< @brief (IF)[F -- nChars, maxWidth -> {maxwidth, totalheight}. */
 jint Zenonia_GFA_GetWordwrapPositionEx(jmethodID id, va_list args) {
     float maxWidth = (float) va_arg(args, double);
     JavaDynArray *ww = (JavaDynArray *) va_arg(args, jobject);
@@ -678,21 +597,24 @@ jint Zenonia_GFA_SetFont(jmethodID id, va_list args) {
     return old;
 }
 
-// Igual que NexusFont.GFA_CharHeight(): literalmente el tamano de texto
-// actual, sin redondeo especial.
+/**
+ * @brief Ensure persistent pixel buffers with the current pixel size GFA_Init (if the engine re-initializes with another size, they are released and).
+ */
 jint Zenonia_GFA_CharHeight(jmethodID id, va_list args) {
     return (jint) g_gfa_text_size;
 }
 
-// NexusFont.GFA_CharWidth(): el ancho de avance del caracter Hangul '뷁'
-// (U+BDC1) -- o sea, el ancho de celda de un caracter coreano completo.
+/**
+ * @brief Ensure persistent pixel buffers with the current pixel size GFA_Init (if the engine re-initializes with another size, they are released and).
+ */
 jint Zenonia_GFA_CharWidth(jmethodID id, va_list args) {
     jint w = (jint) gfa_char_advance(0xBDC1);
     return w > 0 ? w : 1;
 }
 
-// GFA_GetAscent = -ceil(paint.ascent()) -> POSITIVO (altura sobre la linea
-// base); GFA_GetDescent = ceil(paint.descent()) -> positivo.
+/**
+ * @brief Replicates slot reuse of NexusFont.
+ */
 jint Zenonia_GFA_GetAscent(jmethodID id, va_list args) {
     if (gfa_font_ready()) return gfa_font_ascent(g_gfa_text_size);
     return (jint) g_gfa_text_size;
@@ -716,8 +638,9 @@ jint Zenonia_GFA_GetStringLength(jmethodID id, va_list args) {
     return g_gfa_str_n;
 }
 
-// (Ljava/lang/String;I)V -- string (jstring = char* UTF-8 crudo en FalsoJNI),
-// nChars (0 = largo completo). Java: g_strConv = string.substring(0, nChars).
+/**
+ * @brief (Ljava/lang/String;I)V -- string (jstring = raw UTF-8 char* in FalseJNI), nChars (0 = full length).
+ */
 void Zenonia_GFA_SetString(jmethodID id, va_list args) {
     const char *s = (const char *) va_arg(args, jstring);
     int nChars = va_arg(args, int);
@@ -726,11 +649,9 @@ void Zenonia_GFA_SetString(jmethodID id, va_list args) {
     g_gfa_string_len = g_gfa_str_n;
 }
 
-// ([B)V -- el parametro llega como un jbyteArray real (alocado por el motor
-// via NewByteArray + SetByteArrayRegion, confirmado en el log) -- en FalsoJNI
-// eso es un JavaDynArray*, no un puntero crudo (a diferencia de jstring, que
-// FalsoJNI SI pasa como char* crudo -- no confundir los dos casos).
-// Java: new String(data, "KSC5601") -- EUC-KR via tabla generada (cp949).
+/**
+ * @brief ([B)V -- the parameter arrives as a real jbyteArray (allocated by the engine via NewByteArray + SetByteArrayRegion, confirmed in log) -- in].
+ */
 void Zenonia_GFA_SetStringFromKSC5601(jmethodID id, va_list args) {
     JavaDynArray *jda = (JavaDynArray *) va_arg(args, jobject);
     if (jda && jda->array) {
@@ -742,7 +663,9 @@ void Zenonia_GFA_SetStringFromKSC5601(jmethodID id, va_list args) {
     g_gfa_string_len = g_gfa_str_n;
 }
 
-// Java: new String(data, "UTF-16LE").
+/**
+ * @brief Java: new String(data, "UTF-16LE").
+ */
 void Zenonia_GFA_SetStringFromUnicode(jmethodID id, va_list args) {
     JavaDynArray *jda = (JavaDynArray *) va_arg(args, jobject);
     if (jda && jda->array) {
@@ -754,24 +677,12 @@ void Zenonia_GFA_SetStringFromUnicode(jmethodID id, va_list args) {
     g_gfa_string_len = g_gfa_str_n;
 }
 
-// --- Familia GFA_Draw*/Measure*: devuelven un float[] que el codigo nativo
-// desreferencia SIN chequear NULL (confirmado con vita-parse-core: Data
-// abort real dentro de GFA_DrawFont+0x60, justo despues del
-// GetFloatArrayElements que devolvia NULL porque el metodo no estaba
-// registrado -- ver port_progress.md Fase 3.5). Por eso estos NO pueden
-// devolver NULL nunca en el camino normal, a diferencia de los Object no
-// registrados que dan NULL "seguro" en otras partes del motor.
-//
-// DrawFont/DrawText/MeasureText se llaman decenas de veces POR FRAME en el
-// menu (layout de texto continuo) y el motor "libera" el resultado solo con
-// DeleteLocalRef -- que FalsoJNI ignora. Alocar un jda nuevo por llamada
-// filtraba una entrada de tabla + el buffer por cada texto medido (miles por
-// minuto), y cada realloc de la tabla jda (jda_extend) invalidaba los
-// punteros persistentes cacheados (los "Array 0x... not found" sobre
-// GetPixels32 en log_1783658068 eran exactamente eso). El motor consume el
-// float[] inmediatamente (GetFloatArrayElements + Release dentro de la misma
-// llamada nativa, confirmado en el log), asi que un unico jda persistente
-// reutilizado por funcion es seguro.
+/**
+ * @brief (F[I)I -- maxWidth, wwPositions[].
+ */
+desreferencia SIN chequ....
+ * @note Ver docs/loader/java.md para el razonamiento de diseño.
+ */
 static JavaDynArray *gfa_persistent_floats(JavaDynArray **slot, int len) {
     if (!*slot) {
         *slot = jda_alloc(len, FIELD_TYPE_FLOAT);
@@ -779,7 +690,9 @@ static JavaDynArray *gfa_persistent_floats(JavaDynArray **slot, int len) {
     return *slot;
 }
 
-// Limpia el canvas GFA (equivalente al clear de g_gfaIntBuf en Java).
+/**
+ * @brief Clear the GFA canvas (equivalent to clearing g_gfaIntBuf in Java).
+ */
 static uint32_t *gfa_clear_canvas(void) {
     JavaDynArray *px = gfa_pixels32();
     if (!px || !px->array) return NULL;
@@ -787,10 +700,7 @@ static uint32_t *gfa_clear_canvas(void) {
     return (uint32_t *) px->array;
 }
 
-// ()[F -- NexusFont.GFA_DrawFont(): limpia el bitmap, dibuja el string actual
-// en (0, charH - descent + 1) y devuelve {0, 0, anchoMedido, charH + 1}.
-// El motor luego pide GFA_GetPixels32 y usa ceil(rect[2]) x ceil(rect[3])
-// pixeles con SOLO el canal alfa (drawCharToCharCacheBuffer).
+/**< @brief Clear the GFA canvas (equivalent to clearing g_gfaIntBuf in Java). */
 jobject Zenonia_GFA_DrawFont(jmethodID id, va_list args) {
     (void) args;
     static JavaDynArray *jda_slot = NULL;
@@ -818,9 +728,7 @@ jobject Zenonia_GFA_DrawFont(jmethodID id, va_list args) {
     return (jobject) jda;
 }
 
-// (FFIF)[F -- x, y, nChars, maxWidth. NexusFont.GFA_DrawText(): dibujo
-// multilinea con word-wrap dentro del bitmap; devuelve {x, y, anchoMax,
-// altoTotal}. nChars viene ignorado tambien en el Java real (usa g_strConv).
+/**< @brief ()[F -- NexusFont. */
 jobject Zenonia_GFA_DrawText(jmethodID id, va_list args) {
     float x = (float) va_arg(args, double);
     float y = (float) va_arg(args, double);
@@ -877,8 +785,7 @@ jobject Zenonia_GFA_DrawText(jmethodID id, va_list args) {
     return (jobject) jda;
 }
 
-// (IF)[F -- nChars, maxWidth -> {anchoMax, altoTotal}. Mismo loop que
-// DrawText pero solo midiendo (NexusFont.GFA_MeasureText).
+/**< @brief (IF)[F -- nChars, maxWidth -> {maxwidth, totalheight}. */
 jobject Zenonia_GFA_MeasureText(jmethodID id, va_list args) {
     (void) va_arg(args, int);    // nChars -- el Java real no lo usa
     float maxWidth = (float) va_arg(args, double);
@@ -922,24 +829,17 @@ jobject Zenonia_GFA_MeasureText(jmethodID id, va_list args) {
     return (jobject) jda;
 }
 
-// GFA_GetPixels32/16 SI son seguros por construccion aunque devuelvan un
-// array vacio: el codigo nativo que los llama copia via
-// GetArrayLength+GetIntArrayRegion/GetShortArrayRegion (no desreferencia un
-// puntero crudo como GFA_DrawFont/DrawText/MeasureText) -- confirmado
-// leyendo el desensamblado de GFA_GetPixels32/16 en out_ghidra.c. Se
-// registran igual, con un buffer real (en cero, sin rasterizado todavia) en
-// vez de depender de que ese camino tolere un array NULL/vacio sin probarlo.
-// Los pixeles ya quedaron rasterizados en el buffer por el ultimo
-// GFA_DrawFont/DrawText -- aca solo se devuelve el array (el motor copia con
-// GetIntArrayRegion y usa el canal alfa).
+/**
+ * @brief GFA_GetPixels32/16 YES they are safe by construction even if they return a empty array.
+ */
 jobject Zenonia_GFA_GetPixels32(jmethodID id, va_list args) {
     (void) args;
     return (jobject) gfa_pixels32();
 }
 
-// Camino de 16bpp (GFA_Init bpp=16): el Java usa un bitmap RGB565 con
-// colorkey. Este build inicializa con bpp=32 (confirmado en el log), asi que
-// esto queda como conversion best-effort por si algun flujo lo pide.
+/**
+ * @brief GFA_GetPixels32/16 YES they are safe by construction even if they return a empty array.
+ */
 jobject Zenonia_GFA_GetPixels16(jmethodID id, va_list args) {
     (void) args;
     int count = g_gfa_width * g_gfa_height;

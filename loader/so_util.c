@@ -1,9 +1,5 @@
-/* so_util.c -- utils to load and hook .so modules
- *
- * Copyright (C) 2021 Andy Nguyen
- *
- * This software may be modified and distributed under the terms
- * of the MIT license.	See the LICENSE file for details.
+/**
+ * @brief so_util.c -- utils to load and hook .so modules Copyright (C) 2021 Andy Nguyen This software may be modified and distributed under the.
  */
 
 #include <vitasdk.h>
@@ -19,21 +15,18 @@ extern void game_log(const char *fmt, ...);
 extern void fatal_error(const char *fmt, ...);
 
 #ifdef EMULATOR_BUILD
-// Vita3K does not implement the kuKernelCpuUnrestrictedMemcpy NID either; under
-// the emulator all the memory we write into here is memory we allocated
-// ourselves (see the EMULATOR_BUILD path in _so_load), so a plain memcpy works.
+/**
+ * @brief Real hardware: unprivileged sceKernelAllocMemBlock() cannot create executable memory (W^X enforced by the MMU).
+ */
 #define ku_memcpy(dst, src, n) memcpy((dst), (src), (n))
-// Nor does it implement kuKernelFlushCaches. Vita3K's CPU emulation always
-// reads fresh memory (no real instruction cache to keep coherent), so this is
-// a safe no-op under EMULATOR_BUILD.
+/**
+ * @brief Nor does it implement kuKernelFlushCaches.
+ */
 #define ku_flush_caches(addr, size) ((void)0)
 #else
-// Real hardware: unprivileged sceKernelAllocMemBlock() cannot create
-// executable memory (W^X enforced by the MMU) -- kuKernelAllocMemBlock is
-// kubridge's kernel-level allocator that can, and kuKernelCpuUnrestrictedMemcpy/
-// kuKernelFlushCaches are needed to write into and sync that memory. Without
-// this, the text segment ends up RW-only and any attempt to execute code from
-// it faults with a Prefetch Abort exactly at the first instruction fetched.
+/**
+ * @brief Real hardware: unprivileged sceKernelAllocMemBlock() cannot create executable memory (W^X enforced by the MMU).
+ */
 #define ku_memcpy(dst, src, n) kuKernelCpuUnrestrictedMemcpy((dst), (src), (n))
 #define ku_flush_caches(addr, size) kuKernelFlushCaches((addr), (size))
 #endif
@@ -147,13 +140,9 @@ int _so_load(so_module *mod, SceUID so_blockid, void *so_data, uintptr_t load_ad
     mod->shstr = (char *)((uintptr_t)so_data + mod->shdr[mod->ehdr->e_shstrndx].sh_offset);
 
 #ifdef EMULATOR_BUILD
-    // Vita3K does not implement kuKernelAllocMemBlock (fixed-address allocation),
-    // which the code below normally relies on to place the patch/text/data blocks
-    // at exact, contiguous addresses (mirroring a single mmap of the whole module
-    // image, like a real ELF loader would do). Since we can't request specific
-    // addresses under Vita3K, reserve ONE big block up front sized to fit the
-    // whole image contiguously, and sub-allocate patch/text/data regions from it
-    // via pointer arithmetic instead of separate fixed-address OS allocations.
+/**
+ * @brief Vita3K does not implement kuKernelAllocMemBlock (fixed-address allocation), which the code below normally relies on to place the.
+ */
     size_t emu_patch_size = 0;
     uintptr_t emu_cursor = 0; // relative distance from the text segment's start
     for (int i = 0; i < mod->ehdr->e_phnum; i++) {
@@ -184,8 +173,9 @@ int _so_load(so_module *mod, SceUID so_blockid, void *so_data, uintptr_t load_ad
             size_t prog_size;
 
             if ((mod->phdr[i].p_flags & PF_X) == PF_X) {
-                // Allocate arena for code patches, trampolines, etc
-                // Sits exactly under the desired allocation space
+/**
+ * @brief Allocate arena for code patches, trampolines, etc Sits exactly under the desired allocation space.
+ */
                 mod->patch_size = ALIGN_MEM(PATCH_SZ, mod->phdr[i].p_align);
                 prog_size = ALIGN_MEM(mod->phdr[i].p_memsz, mod->phdr[i].p_align);
 #ifdef EMULATOR_BUILD
@@ -224,8 +214,9 @@ int _so_load(so_module *mod, SceUID so_blockid, void *so_data, uintptr_t load_ad
                 mod->text_base = mod->phdr[i].p_vaddr;
                 mod->text_size = mod->phdr[i].p_memsz;
 
-                // Use the .text segment padding as a code cave
-                // Word-align it to make it simpler for instruction arena allocation
+/**
+ * @brief Use the .text segment padding as a code cave Word-align it to make it simpler for instruction arena allocation.
+ */
                 mod->cave_size = ALIGN_MEM(prog_size - mod->phdr[i].p_memsz, 0x4);
                 mod->cave_base = mod->cave_head = prog_data + mod->phdr[i].p_memsz;
                 mod->cave_base = ALIGN_MEM(mod->cave_base, 0x4);
@@ -332,8 +323,9 @@ int _so_load(so_module *mod, SceUID so_blockid, void *so_data, uintptr_t load_ad
     return 0;
 
 #ifdef EMULATOR_BUILD
-    // patch/text/data_blockid[] all alias the single emu_blockid arena here,
-    // so only free it once instead of once per alias.
+/**
+ * @brief patch/text/data_blockid[] all alias the single emu_blockid arena here, so only free it once instead of once per alias.
+ */
     err_free_data:
     err_free_text:
     if (mod->patch_blockid >= 0)
@@ -475,7 +467,9 @@ void reloc_err(uintptr_t got0)
         curr = curr->next;
     }
 
-    // Ooops, this shouldn't have happened.
+    /**
+     * @brief Ooops, this shouldn't have happened.
+     */
     fatal_error("Unknown symbol \"???\" (%p).\n", (void*)got0);
 }
 
@@ -620,11 +614,9 @@ static int so_symbol_index(so_module *mod, const char *symbol)
     return -1;
 }
 
-/*
- * alloc_arena: allocates space on either patch or cave arenas,
- * range: maximum range from allocation to dst (ignored if NULL)
- * dst: destination address
-*/
+/**
+ * @brief alloc_arena: allocates space on either patch or cave arenas, range: maximum range from allocation to dst (ignored if NULL) dst: destination.
+ */
 uintptr_t so_alloc_arena(so_module *so, uintptr_t range, uintptr_t dst, size_t sz) {
     // Is address in range?
 #define inrange(lsr, gtr, range) \
@@ -632,7 +624,9 @@ uintptr_t so_alloc_arena(so_module *so, uintptr_t range, uintptr_t dst, size_t s
     // Space left on block
 #define blkavail(type) (so->type##_size - (so->type##_head - so->type##_base))
 
-    // keep allocations 4-byte aligned for simplicity
+/**
+ * @brief alloc_arena: allocates space on either patch or cave arenas, range: maximum range from allocation to dst (ignored if NULL) dst: destination.
+ */
     sz = ALIGN_MEM(sz, 4);
 
     if (sz <= (blkavail(patch)) && inrange(so->patch_base, dst, range)) {
@@ -658,8 +652,9 @@ static void trampoline_ldm(so_module *mod, uint32_t *dst) {
     uint32_t stored = 0;
     for (int i = 0; i < 16; i++) {
         if (bitMask & (1 << i)) {
-            // If the register we're reading the offset from is the same as the one we're writing,
-            // delay it to the very end so that the base pointer isn't clobbered
+/**
+ * @brief If the register we're reading the offset from is the same as the one we're writing, delay it to the very end so that the base pointer isn't.
+ */
             if (baseReg == i)
                 stored = LDR_OFFS(i, baseReg, cur).raw;
             else
@@ -668,7 +663,7 @@ static void trampoline_ldm(so_module *mod, uint32_t *dst) {
         }
     }
 
-    // Perform the delayed load if needed
+    /**< @brief Perform the delayed load if needed. */
     if (stored) {
         *ptr++ = stored;
     }
@@ -684,7 +679,7 @@ static void trampoline_ldm(so_module *mod, uint32_t *dst) {
         return;
     }
 
-    // Create sign extended relative address rel_addr
+/**< @brief Create sign extended relative address rel_addr. */
     trampoline[0] = B(dst, patch_addr).raw;
 
     ku_memcpy((void*)patch_addr, funct, trampoline_sz);
@@ -700,8 +695,9 @@ uintptr_t so_symbol(so_module *mod, const char *symbol) {
 }
 
 void so_symbol_fix_ldmia(so_module *mod, const char *symbol) {
-    // This is meant to work around crashes due to unaligned accesses (SIGBUS :/) due to certain
-    // kernels not having the fault trap enabled, e.g. certain RK3326 Odroid Go Advance clone distros.
+/**
+ * @brief This is meant to work around crashes due to unaligned accesses (SIGBUS :/) due to certain kernels not having the fault trap enabled, e.
+ */
     int idx = so_symbol_index(mod, symbol);
     if (idx == -1)
         return;
@@ -710,7 +706,9 @@ void so_symbol_fix_ldmia(so_module *mod, const char *symbol) {
     for (uintptr_t addr = st_addr; addr < st_addr + mod->dynsym[idx].st_size; addr+=4) {
         uint32_t inst = *(uint32_t*)(addr);
 
-        //Is this an LDMIA instruction with a R0-R12 base register?
+/**
+ * @brief This is meant to work around crashes due to unaligned accesses (SIGBUS :/) due to certain kernels not having the fault trap enabled, e.
+ */
         if (((inst & 0xFFF00000) == 0xE8900000) && (((inst >> 16) & 0xF) < 13) ) {
             game_log("[so_util] Found possibly misaligned LDMIA on 0x%08X, patching...\n", (unsigned int) addr);
             trampoline_ldm(mod, (uint32_t *) addr);

@@ -16,7 +16,10 @@ typedef struct ColorState {
 	unsigned char bgIntensity; // 22=normal, 1=increased ("bright")
 	int inversion; // flag if bg/fg colors are inverted
 
-	// default colors (ANSI/VTERM/GREYSCALE)
+/**
+ * @brief default colors (ANSI/VTERM/GREYSCALE).
+ * @note See `docs/common/debugScreen.md:19` for detailed design rationale.
+ */
 	unsigned char fgIndexDefault; // default ANSI/VTERM/GREYSCALE color code
 	unsigned char fgIntensityDefault; // 22=normal, 1=increased, 2=decreased
 	unsigned char bgIndexDefault; // default ANSI/VTERM/GREYSCALE color code

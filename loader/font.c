@@ -1,10 +1,5 @@
-/*
- * font.c -- ver font.h. Rasterizador stb_truetype para el puente GFA.
- *
- * Notas de fidelidad con android.graphics.Paint:
- *  - setTextSize(px) es el tamano EM en pixeles -> stbtt_ScaleForMappingEmToPixels
- *    (NO ScaleForPixelHeight, que usa ascent-descent y da glifos mas chicos).
- *  - Sin kerning (Paint tampoco lo aplica por default en drawText simple).
+/**
+ * @brief Font raster backend for GFA bridge (NexusFont.java).
  */
 
 #include <stdio.h>
@@ -79,7 +74,10 @@ float gfa_font_advance(float px, uint32_t cp) {
     int adv, lsb;
     int g = stbtt_FindGlyphIndex(&font_info, (int) cp);
     if (g == 0 && cp != ' ') {
-        // Glifo ausente: caja del ancho de un espacio ideografico aproximado
+/**
+ * @brief Paint.
+ * @note See `docs/loader/font.md:78` for detailed design rationale.
+ */
         stbtt_GetCodepointHMetrics(&font_info, 0x3000, &adv, &lsb);
         if (adv == 0) stbtt_GetCodepointHMetrics(&font_info, 'M', &adv, &lsb);
     } else {
@@ -142,10 +140,9 @@ float gfa_font_draw_line(float px, const uint32_t *cps, int n,
                         uint32_t old = buf[dy * bw + dx];
                         uint32_t old_a = old >> 24;
                         if (a >= old_a) {
-                            // Premultiplicado, igual que un Bitmap ARGB_8888
-                            // dibujado con Canvas: el motor usa solo A para el
-                            // char cache; RGB queda para el camino de blit
-                            // directo (CGxFontAndroid::DrawFont).
+/**
+ * @brief Premultiplied, same as an ARGB_8888 Bitmap.
+ */
                             buf[dy * bw + dx] = (a << 24) |
                                                 ((col_r * a / 255) << 16) |
                                                 ((col_g * a / 255) << 8) |

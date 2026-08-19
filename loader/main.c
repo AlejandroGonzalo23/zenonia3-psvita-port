@@ -1,11 +1,5 @@
-/*
- * main.c
- *
- * ARMv7 Shared Libraries loader. Zenonia 3.
- *
- * Mismo motor (Gamevil Nexus2/"Clet") que Zenonia 2 -- ver
- * ../Zenonia2-vita/loader/main.c y plan_zenonia3_port.md seccion 0 para el
- * detalle de que es identico y que cambio de ABI real entre ambos juegos.
+/**
+ * @brief main.c ARMv7 Shared Libraries loader. Zenonia 3. Same engine (Gamevil Nexus2/"Clet") as Zenonia 2.
  */
 
 #include <psp2/kernel/threadmgr.h>
@@ -32,18 +26,9 @@
 #define printf psvDebugScreenPrintf
 #define LOG_DIR "ux0:data/zenonia3/logs"
 
-// Resolucion LOGICA del juego: 400x240 fijo. Confirmado por triple fuente
-// (2026-07-10): el Java original pasa gameScreenWidth/Height = 400/240 a
-// NativeInitDeviceInfo/NativeInitWithBufferSize (NexusGLActivity.java:85-86,
-// jadx renombro la constante 400 como UI_STATUS_PURCHASE_PAGE), getDeviceInfo()
-// defaultea di[3]=400 di[4]=0xf0 (out_ghidra.c:148015), y el codigo de dibujo
-// del titulo esta hardcodeado a ese espacio (CMvTitleState::DrawZeroGrade
-// hace DrawFillRect(0,0,400,240) y centra con (400-w)>>1 -- out_ghidra.c:105397).
-// Inicializar a 800x480 hacia que el juego pintara solo el cuadrante superior
-// izquierdo del framebuffer (sprites chicos + el resto blanco/negro, visto en
-// consola real). El escalado a pantalla completa lo hace el MOTOR: glResize()
-// arma el quad con vertices +-w/2 del tamano que le pasemos a NativeResize
-// (out_ghidra.c:148107+), asi que NativeResize recibe SCREEN_W/H (960x544).
+/**
+ * @brief LOGICAL resolution of the game: 400x240 fixed.
+ */
 #define GAME_W 400
 #define GAME_H 240
 #define SCREEN_W 960
@@ -51,16 +36,15 @@
 
 FILE *log_file = NULL;
 
-// Una vez que vitaGL toma la pantalla, no se debe seguir escribiendo al
-// framebuffer crudo de debugScreen -- ambos competirian por el mismo buffer.
+/**< @brief LOGICAL resolution of the game: 400x240 fixed. */
 int gl_active = 0;
 
 int _newlib_heap_size_user = 128 * 1024 * 1024; // 128 MB para newlib (malloc)
 unsigned int sceLibcHeapSize = 4 * 1024 * 1024; // 4 MB para SCE Libc (system libs)
 
-// Un archivo de log por corrida, con timestamp, dentro de logs/ -- mantiene
-// el historial completo entre pruebas en vez de pisar siempre el mismo
-// log.txt (ver psvita-porting skill, hardware_debugging.md).
+/**
+ * @brief One log file per run, with timestamp, inside logs/.
+ */
 void init_log() {
     sceIoMkdir(LOG_DIR, 0777); // falla en silencio si ya existe
 
@@ -98,8 +82,9 @@ void fatal_error(const char *fmt, ...) {
     va_end(list);
 
     game_log("[FATAL] %s\n", string);
-    // La pantalla de debug se inicializa solo aca: en un arranque sano no se
-    // muestra nunca texto de consola.
+/**
+ * @brief One log file per run, with timestamp, inside logs/.
+ */
     psvDebugScreenInit();
     printf("[FATAL] %s\n", string);
     sceKernelDelayThread(10 * 1000 * 1000); // 10s para poder leerlo antes de morir
@@ -108,10 +93,9 @@ void fatal_error(const char *fmt, ...) {
 
 so_module zenonia3_mod;
 
-// No confirmado que el .so de Zenonia 3 lo importe (ver Fase 1 del plan: no
-// aparece en `objdump -T | grep UND`), pero se deja disponible por si algun
-// build futuro lo necesita -- no hace dano tenerlo sin registrar en
-// dynlib.c.
+/**
+ * @brief Not confirmed that the Zenonia 3 .
+ */
 int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
 	va_list list;
 	char string[512];
@@ -127,9 +111,9 @@ int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
 extern so_default_dynlib default_dynlib[];
 extern int default_dynlib_size;
 
-// Punteros a funciones JNI del juego. A diferencia de Zenonia 2: no hay
-// NativeInit (no existe en este .so) ni setInputEvent (idem) -- ver tabla
-// de diferencias de ABI en plan_zenonia3_port.md.
+/**
+ * @brief Not confirmed that the Zenonia 3 .
+ */
 int (* Game_JNI_OnLoad)(void *vm, void *reserved);
 void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h);
 void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h);
@@ -138,19 +122,9 @@ void (* NativeResize)(void *env, void *obj, int w, int h);
 void (* NativeResumeClet)(void *env, void *obj);
 void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3);
 
-// --- Input: protocolo pendiente de reconfirmar contra el Java real de
-// Zenonia 3 (Fase 5 del plan -- decompilar ZenoniaUIControllerView y el
-// NexusHal equivalente, no asumir que es igual a Zenonia2UIControllerView).
-// Se arranca con los mismos codigos MH_* y keycodes HAL de Zenonia 2 porque
-// son constantes del MOTOR (Nexus2/Clet), no de la capa de juego -- pero
-// deben confirmarse con un log real antes de dar esto por bueno.
-//
-// Diferencia real de ABI: no existe setInputEvent en este .so. Solo hay
-// handleCletEvent, que ahora toma 4 ints (antes 3) -- ver Fase 1 del plan y
-// out_ghidra.c:147900. Se sigue encolando un evento por frame y entregandolo
-// justo antes de NativeRender (mismo orden que NexusGLRenderer.drawFrame en
-// Zenonia 2), sin la entrega inmediata que hacia setInputEvent, porque acá
-// no existe ese canal.
+/**
+ * @brief Input: protocol pending reconfirmation against the real Java of Zenonia 3 (Phase 5 of the plan -- decompile ZenoniaUIControllerView and the).
+ */
 
 #define MH_KEY_PRESSEVENT       2
 #define MH_KEY_RELEASEEVENT     3
@@ -168,16 +142,14 @@ void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3)
 #define HAL_KEY_BACK  (-16)
 #define HAL_KEY_SKIP  (35)
 
-// Constantes reales de NexusHal.java -- el boton "Continuar" del menu no
-// manda un press/release de tecla como los demas, manda un UNICO evento con
-// este tipo/parametro (ver Natives.java: img_menu_continue.setOnClickListener
-// -> handleCletEvent(NexusHal.REPLY_YESNO, NexusHal.FIRST_MOVE_REPLY_PAGE, 0, 0)).
+/**
+ * @brief Actual NexusHal.
+ */
 #define NEXUS_HAL_REPLY_YESNO           19450815
 #define NEXUS_HAL_FIRST_MOVE_REPLY_PAGE 20010913
-// Los botones "escribir resena"/"mas tarde" de la propia pantalla de
-// REPLY_PAGE (ver Natives.java: showReplyMoveComponent(), img_btn_write/
-// img_btn_later OnClickListener) mandan el mismo tipo REPLY_YESNO con estos
-// otros dos parametros.
+/**
+ * @brief The "write review"/"later" buttons on the review screen itself REPLY_PAGE (see Natives.java: showReplyMoveComponent(), img_btn_write/).
+ */
 #define NEXUS_HAL_YES_MOVE_REPLY_PAGE   20010911
 #define NEXUS_HAL_NO_MOVE_REPLY_PAGE    20010912
 
@@ -216,13 +188,9 @@ static const struct { unsigned int btn; int hal; } btn_map[] = {
 };
 #define BTN_MAP_COUNT (sizeof(btn_map) / sizeof(btn_map[0]))
 
-// NOTA: a diferencia de Zenonia 2, aca NO se porta ningun parche binario
-// (apply_so_patches). El bug de Zenonia2 (puntero de heap tratado como
-// signed en CMvLayerData::PreLoad) es un patron de motor viejo que puede
-// reaparecer en este .so, pero en un offset DISTINTO -- no reusar el numero
-// 0xaec38 a ciegas. Si aparece el mismo sintoma (NULL "imposible" en datos
-// que deberian haberse cargado), re-derivar el offset con vita-parse-core +
-// objdump -d sobre ESTE binario (ver Fase 7 del plan).
+/**
+ * @brief NOTE: unlike Zenonia 2, no binary patch is carried here (apply_so_patches).
+ */
 
 extern volatile int g_ui_status;
 extern void zenonia_install_array_hooks(void);
@@ -290,30 +258,26 @@ void log_active_frame_buf(const char *label) {
 }
 
 void gl_init() {
-    // Sin MSAA / sin triple buffering: config confirmada funcionando en
-    // hardware real para el mismo motor (Zenonia 2) y para Prince of Persia.
+/**
+ * @brief vitaGL's internal vsync only expects 1 vblank (panel at 60Hz).
+ */
     vglUseTripleBuffering(GL_FALSE);
-    // GL_FALSE aca es el resultado sano a 960x544 (resolucion nativa, nunca
-    // cae al fallback) -- no tratarlo como fallo de init.
+/**
+ * @brief vitaGL's internal vsync only expects 1 vblank (panel at 60Hz).
+ */
     vglInitExtended(0, 960, 544, 6 * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
 #ifdef LOCK_FPS_30
-    // El vsync interno de vitaGL solo espera 1 vblank (panel a 60Hz) -- con
-    // RGB565_CONVERT_MODE=NATIVE el frame a veces entra en ese vblank y a
-    // veces no, y el resultado es un framerate que rebota entre ~60 y ~40
-    // (el jitter/stutter tipico de estar justo en el borde del vblank). Se
-    // apaga el vsync de vitaGL y se toma control manual del pacing en el
-    // loop principal (sceDisplayWaitVblankStartMulti(2)) para forzar
-    // siempre 2 vblanks por frame -- 30fps estable y sin tearing en vez de
-    // "hasta 60 pero irregular".
+/**
+ * @brief Conservative factory clocks (CPU 333MHz / bus 166MHz / GPU 111MHz).
+ */
     vglWaitVblankStart(GL_FALSE);
 #endif
     gl_active = 1;
 }
 
-// Clocks conservadores de fabrica (CPU 333MHz / bus 166MHz / GPU 111MHz) --
-// subir a los maximos estables conocidos en homebrew de Vita es standard
-// practice (mismo approach usado en la mayoria de ports vitaGL) y no toca
-// ninguna logica del juego, solo la frecuencia real del hardware.
+/**
+ * @brief Conservative factory clocks (CPU 333MHz / bus 166MHz / GPU 111MHz).
+ */
 void raise_clocks() {
     scePowerSetArmClockFrequency(444);
     scePowerSetBusClockFrequency(222);
@@ -340,7 +304,7 @@ int main() {
 		so_relocate(&zenonia3_mod);
 		so_resolve(&zenonia3_mod, default_dynlib, default_dynlib_size, 0);
 
-		// Parche binario para CMvLayerData::PreLoad (igual a Zenonia 2, diferente offset)
+/**< @brief Conservative factory clocks (CPU 333MHz / bus 166MHz / GPU 111MHz). */
 		uint32_t text_base = zenonia3_mod.text_base;
 		if (*(uint16_t *)(text_base + 0x9a7b4) == 0xdd24) {
 			uint16_t patch_beq = 0xd024;
@@ -374,31 +338,18 @@ int main() {
 			(void*)Game_JNI_OnLoad, (void*)NativeInitDeviceInfo, (void*)NativeInitWithBufferSize,
 			(void*)NativeRender, (void*)NativeResize, (void*)NativeResumeClet, (void*)handleCletEvent);
 
-		// Secuencia de arranque -- reemplaza al NativeInit() unico de
-		// Zenonia 2 (que no existe aca).
-		//
-		// ORDEN CONFIRMADO CON UN CRASH REAL (ver port_progress.md Fase 3,
-		// bug #2): NativeInitWithBufferSize DEBE llamarse ANTES que
-		// NativeInitDeviceInfo. NativeInitWithBufferSize dispara
-		// startClet() -> GxCreateGlobalHeap() -> Gcx_MM_Init(), que crea el
-		// pool de memoria PROPIO del motor (un allocator custom tipo slab,
-		// separado de malloc/new) del que depende Gcx_MM_Alloc/Calloc.
-		// NativeInitDeviceInfo usa ese mismo allocator para el buffer de
-		// pixeles interno (via getDeviceInfo() -> Gcx_MM_Calloc) -- si se
-		// llama primero, el pool todavia no existe, Gcx_MM_Alloc devuelve
-		// NULL, y el memset(NULL,0,n) subsiguiente hace Data Abort (visto
-		// en consola real, resuelto con vita-parse-core + objdump -d contra
-		// libgameDSO.so: LR cae en Gcx_MM_Calloc+0x13, justo despues del
-		// blx a memset@plt).
+/**
+ * @brief Boot sequence -- replaces the single NativeInit() Zenonia 2 (which does not exist here).
+ */
 		game_log("Llamando JNI_OnLoad...\n");
 		if (Game_JNI_OnLoad) Game_JNI_OnLoad(&jvm, NULL);
 		game_log("Llamando NativeInitWithBufferSize(%d,%d)...\n", GAME_W, GAME_H);
 		if (NativeInitWithBufferSize) NativeInitWithBufferSize(jniEnv, NULL, GAME_W, GAME_H);
 		game_log("Llamando NativeInitDeviceInfo(%d,%d)...\n", GAME_W, GAME_H);
 		if (NativeInitDeviceInfo) NativeInitDeviceInfo(jniEnv, NULL, GAME_W, GAME_H);
-		// El tamano de PANTALLA, no el del buffer -- igual que Android, donde
-		// NativeResize recibe el tamano de la GLSurfaceView real y el motor
-		// arma solo el quad de escalado (ver nota en GAME_W/GAME_H).
+/**
+ * @brief Boot sequence -- replaces the single NativeInit() Zenonia 2 (which does not exist here).
+ */
 		game_log("Llamando NativeResize(%d,%d)...\n", SCREEN_W, SCREEN_H);
 		if (NativeResize) NativeResize(jniEnv, NULL, SCREEN_W, SCREEN_H);
 		game_log("Llamando NativeResumeClet...\n");
@@ -416,10 +367,9 @@ int main() {
 		unsigned int old_buttons = 0;
 		int frame = 0;
 
-		// Contador de FPS real (para comparar builds A/B de las
-		// optimizaciones RGB565_LUT/NEON_FIXED contra un mismo punto de
-		// referencia en el log, en vez de "a ojo"). Ventana de ~2s en vez de
-		// por-frame para no agregar overhead de log al loop caliente.
+/**
+ * @brief Boot sequence -- replaces the single NativeInit() Zenonia 2 (which does not exist here).
+ */
 		int fps_count = 0;
 		SceUInt64 fps_window_start = sceKernelGetProcessTimeWide();
 
@@ -431,28 +381,18 @@ int main() {
 				game_log("frame %d alive, touch.reportNum=%d pad.buttons=0x%08x ui_status=%d\n", frame, touch.reportNum, (unsigned int) pad.buttons, g_ui_status);
 			}
 
-			// Salida de emergencia: START+SELECT juntos
+/**< @brief The SCREEN size, not the buffer size. */
 			if ((pad.buttons & SCE_CTRL_START) && (pad.buttons & SCE_CTRL_SELECT)) break;
 
-			// UI_STATUS_EXIT (104): en Android, ZenoniaUIControllerView.setUIState()
-			// llama NexusGLActivity.myActivity.finishApp() para este estado --
-			// una llamada puramente de Android que este loader no tiene forma
-			// de reproducir. Sin este chequeo, el loop seguia corriendo para
-			// siempre sin dibujar nada util (pantalla negra permanente) --
-			// confirmado como la causa mas probable del "pantalla negra" al
-			// navegar Triangulo(SKIP)+Circulo(BACK) en el menu: BACK ahi
-			// dispara el flujo de salida del motor.
+/**< @brief The SCREEN size, not the buffer size. */
 			if (g_ui_status == UI_STATUS_EXIT) break;
 
 			unsigned int pressed = pad.buttons & ~old_buttons;
 			unsigned int released = old_buttons & ~pad.buttons;
 
-			// ABOUT/HELP (ui_status 5/4): en el APK original el scroll de
-			// aboutWebView/helpWebView era gesto tactil -- sin capa Android
-			// (ver androidui.c) no hay forma de reproducir eso, asi que se
-			// reusa D-pad arriba/abajo para scrollear en vez de reenviarlo al
-			// motor (que de todos modos no hace nada con UP/DOWN en estos 2
-			// estados). Mantenido presionado = scroll continuo.
+/**
+ * @brief Boot sequence -- replaces the single NativeInit() Zenonia 2 (which does not exist here).
+ */
 			if (g_ui_status == 4 || g_ui_status == 5) {
 				if (pad.buttons & SCE_CTRL_UP)   androidui_scroll_info_text(g_ui_status, -8.0f, SCREEN_W, SCREEN_H);
 				if (pad.buttons & SCE_CTRL_DOWN) androidui_scroll_info_text(g_ui_status,  8.0f, SCREEN_W, SCREEN_H);
@@ -468,38 +408,22 @@ int main() {
 			}
 			old_buttons = pad.buttons;
 
-			// Touch: panel 1920x1088 -> espacio de JUEGO (GAME_W x GAME_H =
-			// 400x240). Confirmado en UIFullTouch.java (la ruta de touch
-			// in-game real de Zenonia 3): convertScreenX/Y multiplican por
-			// gameScreenWidth/Height ANTES de setTouchEvent(23/25/24, x, y,
-			// pointerId) -- el motor recibe coordenadas de juego, no de
-			// pantalla. p3 es el pointerId (un solo dedo: 0). El evento 25
-			// (MOVE) se manda cuando el dedo se arrastra -- Android lo manda
-			// en cada ACTION_MOVE; aca, cuando cambia la celda de pixel.
+/**< @brief The SCREEN size, not the buffer size. */
 			if (touch.reportNum > 0) {
 				int x = touch.report[0].x * GAME_W / 1920;
 				int y = touch.report[0].y * GAME_H / 1088;
 
 				if (!last_touch) {
-					// En el APK original, el logo/titulo/menu (ui_status
-					// 1/2) son ImageView/ImageButton de Android que
-					// CONSUMEN el toque antes de que llegue al
-					// GLSurfaceView -- el motor nunca recibe un evento de
-					// puntero crudo ahi, solo la tecla sintetica que el
-					// listener de Android manda (ver androidui.c y
-					// Natives.java: showTitleComponent()/
-					// showMenuItemComponent()). Replicar eso: en vez de
-					// reenviar el toque como MH_POINTER_*, interceptarlo
-					// aca y mandar el evento equivalente -- o nada, si cae
-					// afuera de cualquier boton (el fondo del menu no tiene
-					// listener propio en el original).
+/**
+ * @brief Real FPS counter (to compare A/B builds of the RGB565_LUT/NEON_FIXED optimizations against the same point of reference in the log, instead).
+ */
 					int sx = touch.report[0].x * SCREEN_W / 1920;
 					int sy = touch.report[0].y * SCREEN_H / 1088;
 
 					if (g_ui_status == 1) {
-						// Natives.showTitleComponent(): gb_titleImg (fondo,
-						// pantalla completa) manda BACK press+release ante
-						// CUALQUIER toque.
+/**
+ * @brief The SCREEN size, not the buffer size.
+ */
 						queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_BACK, 0, 0);
 						queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_BACK, 0, 0);
 						last_touch_suppressed = 1;
@@ -540,9 +464,9 @@ int main() {
 								break;
 						}
 					} else if (g_ui_status == 5 || g_ui_status == 4) {
-						// Natives.showAboutComponent()/showHelpComponent(): el
-						// mismo boton "uiback" (arriba a la derecha) manda BACK
-						// press+release en las 2 pantallas.
+/**
+ * @brief Natives.showTitleComponent().
+ */
 						androidui_backbtn_hit hit = androidui_backbtn_hit_test((float) sx, (float) sy, SCREEN_W, SCREEN_H);
 						if (hit == ANDROIDUI_BACKBTN_HIT_BACK) {
 							queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_BACK, 0, 0);
@@ -552,10 +476,9 @@ int main() {
 							last_touch_suppressed = 0;
 						}
 					} else if (g_ui_status == 5000) {
-						// Natives.showReplyMoveComponent(): popup de "valorar
-						// la app" mostrado al tocar Continuar -- botones
-						// "escribir resena"/"mas tarde", cada uno con su
-						// propio OnClickListener (no touch crudo al motor).
+/**
+ * @brief Natives.showTitleComponent().
+ */
 						androidui_reply_hit hit = androidui_reply_hit_test((float) sx, (float) sy, SCREEN_W, SCREEN_H);
 						switch (hit) {
 							case ANDROIDUI_REPLY_HIT_WRITE:
@@ -601,25 +524,20 @@ int main() {
 
 			if (NativeRender) NativeRender(jniEnv, NULL);
 
-			// Mientras el motor este en logo/titulo (estados de UI de Java,
-			// invisibles en el loader nativo -- pendiente confirmar los
-			// numeros de estado reales de Zenonia 3 en Fase 5), tapar con
-			// el splash.
+/**
+ * @brief While the engine is in logo/title (Java UI states, invisible in the native loader -- pending confirmation real status numbers of Zenonia 3).
+ */
 			if (g_ui_status >= 0 && g_ui_status <= 1) splash_draw();
 
-			// Logo/titulo/menu (ui_status -1/1/2): el .so nativo solo dibuja
-			// un fondo generico (CMvTitleState::DrawZeroGrade/DrawTeamLogo) --
-			// el arte real (logo, fondo de titulo, fondo+botones de menu) lo
-			// dibujaba Android como ImageView/ImageButton superpuestos al
-			// GLSurfaceView (ver androidui.c). Sin capa Java, hay que
-			// replicarlo aca.
+/**
+ * @brief While the engine is in logo/title (Java UI states, invisible in the native loader -- pending confirmation real status numbers of Zenonia 3).
+ */
 			androidui_draw(g_ui_status, SCREEN_W, SCREEN_H);
 
 #ifdef LOCK_FPS_30
-			// 2 vblanks = 30fps a un panel de 60Hz. Si el frame ya tardo mas
-			// de eso (build lenta, RGB565_CONVERT_MODE=SCALAR/LUT), esta
-			// llamada practicamente no espera -- no empeora nada, solo actua
-			// como cap cuando el frame es lo bastante rapido para pasarlo.
+/**
+ * @brief While the engine is in logo/title (Java UI states, invisible in the native loader -- pending confirmation real status numbers of Zenonia 3).
+ */
 			sceDisplayWaitVblankStartMulti(2);
 #endif
 			vglSwapBuffers(GL_FALSE);

@@ -1,6 +1,6 @@
-// Tabla EUC-KR/CP949 (KSC5601) -> Unicode BMP, generada con Python codecs
-// cp949. Indexada [(lead-0x81)*190 + (trail-0x41)]; 0 = secuencia invalida.
-// Usada por GFA_SetStringFromKSC5601 (java.c) -- new String(data, "KSC5601").
+/**
+ * @brief Tabla EUC-KR/CP949 (KSC5601) -> Unicode BMP, generada con Python codecs cp949.
+ */
 #ifndef KSC5601_TABLE_H
 #define KSC5601_TABLE_H
 

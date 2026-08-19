@@ -1,94 +1,10 @@
 #ifndef DEBUG_SCREEN_C
 #define DEBUG_SCREEN_C
 
-/*
-* debugScreen.c of Vita SDK
-*
-* - psvDebugScreenInit()
-*    Initializes debug screen for output.
-*
-* - psvDebugScreenPuts()
-*    Similar to the C library function puts() writes a string to the debug
-*    screen up to but not including the NUL character.
-*    Supports the most important CSI sequences of ECMA-48 / ISO/IEC 6429:1992.
-*    Graphic Rendition Combination Mode (GRCM) supported is Cumulative.
-*    Modifications:
-*    - CSI SGR codes 30-37/38/39 & 40-47/48/49 set standard/fitting/default intensity, so instead of "\e[1;31m" use "\e31;1m"
-*    - ANSI color #8 is made darker (40<>80), so that "dark" white is still lighter than "bright" dark
-*    - support 16 save storages for CSI s and CSI u, e.g "\e[8s" and "\e[8u"
-*    [1] https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
-*    [2] https://jonasjacek.github.io/colors/
-*    [3] https://www.ecma-international.org/publications/standards/Ecma-048.htm
-*    [4] https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
-*    [5] http://man7.org/linux/man-pages/man4/console_codes.4.html
-*
-*    (CSI = "\e[")
-*     CSI [n] s   = Save Cursor Position to slot #n (0-15). Default 0.
-*     CSI [n] u   = Restore Cursor Position from slot #n (0-15). Default 0.
-*     CSI n A     = Cursor Up <n> times.
-*     CSI n B     = Cursor Down <n> times.
-*     CSI n C     = Cursor Forward <n> times.
-*     CSI n D     = Cursor Back <n> times.
-*     CSI n E     = Cursor Next Line <n> times and to Beginning of that Line.
-*     CSI n F     = Cursor Previous Line <n> times and to Beginning of that Line.
-*     CSI n G     = Cursor to Column <n>. The value is 1-based and defaults to 1 (first column) if omitted.
-*     CSI n ; m H = Cursor to Row <n> and Column <m>. The values are 1-based and default to 1 (top left corner) if omitted.
-*     CSI n ; m f = Cursor to Row <n> and Column <m>. The values are 1-based and default to 1 (top left corner) if omitted.
-*     CSI [n] J   = Clears part of the screen. Cursor position does not change.
-*                   0 (default) from cursor to end of screen.
-*                   1 from cursor to beginning of the screen.
-*                   2 entire screen
-*     CSI [n] K   = Clears part of the line. Cursor position does not change.
-*                   0 (default) from cursor to end of line.
-*                   1 from cursor to beginning of line.
-*                   2 clear entire line.
-*     CSI [n] m = Sets the appearance of the following characters.
-*               0       Reset all (colors and inversion) (default)
-*               1       Increased intensity ("bright" color)
-*               2       Decreased intensity ("faint"/"dark" color)
-*               7       Enable inversion
-*               22      Standard intensity ("normal" color)
-*               27      Disable inversion
-*               30–37   Set ANSI foreground color with standard intensity
-*               38      Set foreground color. Arguments are 5;<n> or 2;<r>;<g>;<b>
-*               39      Default foreground color
-*               40–47   Set standard ANSI background color with standard intensity
-*               48      Set background color. Arguments are 5;<n> or 2;<r>;<g>;<b>
-*               49      Default background color
-*               90–97   Set ANSI foreground color with increased intensity
-*               100–107 Set ANSI background color with increased intensity
-*
-* - psvDebugScreenPrintf()
-*    Similar to the C library function printf() formats a string and ouputs
-*    it via psvDebugScreenPuts() to the debug screen.
-*
-* - psvDebugScreenGetColorStateCopy(ColorState *copy)
-*    Get copy of current color state.
-*
-* - psvDebugScreenGetCoordsXY(int *x, int *y)
-*    Get copy of current pixel coordinates.
-*    Allows for multiple and custom position stores.
-*    Allows correct positioning when using different font sizes.
-*
-* - psvDebugScreenSetCoordsXY(int *x, int *y)
-*    Set pixel coordinates.
-*    Allows for multiple and custom position stores.
-*    Allows correct positioning when using different font sizes.
-*
-* - PsvDebugScreenFont *psvDebugScreenGetFont()
-*    Get current font.
-*
-* - PsvDebugScreenFont *psvDebugScreenSetFont(PsvDebugScreenFont *font) {
-*    Set font. Returns current font.
-*
-* - PsvDebugScreenFont *psvDebugScreenScaleFont2x(PsvDebugScreenFont *source_font) {
-*    Scales a font by 2 (e.g. 8x8 to 16x16) and returns new scaled font.
-*
-* Also see the following samples:
-* - debugscreen
-* - debug_print
-*
-*/
+/**
+ * @brief default colors (ANSI/VTERM/GREYSCALE).
+ * @note See `docs/common/debugScreen.md:4` for detailed design rationale.
+ */
 
 #include <stdlib.h> // for malloc(), free()
 #include <stdio.h> // for vsnprintf()
@@ -148,9 +64,10 @@ static uint32_t DARK_COLORS_BGR[8] = {
 	0x000000, 0x000040, 0x004000, 0x004040, 0x400000, 0x400040, 0x404000, 0x808080, // 0-7
 };
 
-// ANSI/VTERM/GREYSCALE palette: https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit
-// modifications:
-// - #8 is made darker (40<>80), so that "dark" white is still lighter than "bright" dark
+/**
+ * @brief ANSI/VTERM/GREYSCALE palette: https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit modifications: - #8 is made darker.
+ * @note See `docs/common/debugScreen.md:151` for detailed design rationale.
+ */
 static uint32_t ANSI_COLORS_BGR[256] = {
 	0x000000, 0x000080, 0x008000, 0x008080, 0x800000, 0x800080, 0x808000, 0xc0c0c0, // 0-7
 	0x404040, 0x0000ff, 0x00ff00, 0x00ffff, 0xff0000, 0xff00ff, 0xffff00, 0xffffff, // 8-15
@@ -186,9 +103,10 @@ static uint32_t ANSI_COLORS_BGR[256] = {
 	0xa8a8a8, 0xb2b2b2, 0xbcbcbc, 0xc6c6c6, 0xd0d0d0, 0xdadada, 0xe4e4e4, 0xeeeeee, // 248-255
 };
 
-/*
-* Reset foreground color to default
-*/
+/**
+ * @brief Reset foreground color to default.
+ * @note See `docs/common/debugScreen.md:189` for detailed design rationale.
+ */
 static void psvDebugScreenResetFgColor(void) {
 	colors.fgTrueColorFlag = 0;
 	colors.fgTrueColor = 0;
@@ -196,9 +114,10 @@ static void psvDebugScreenResetFgColor(void) {
 	colors.fgIntensity = colors.fgIntensityDefault;
 }
 
-/*
-* Reset background color to default
-*/
+/**
+ * @brief Reset background color to default.
+ * @note See `docs/common/debugScreen.md:199` for detailed design rationale.
+ */
 static void psvDebugScreenResetBgColor(void) {
 	colors.bgTrueColorFlag = 0;
 	colors.bgTrueColor = 0;
@@ -206,16 +125,18 @@ static void psvDebugScreenResetBgColor(void) {
 	colors.bgIntensity = colors.bgIntensityDefault;
 }
 
-/*
-* Reset inversion state to default
-*/
+/**
+ * @brief Reset inversion state to default.
+ * @note See `docs/common/debugScreen.md:209` for detailed design rationale.
+ */
 static void psvDebugScreenResetInversion(void) {
 	colors.inversion = colors.inversionDefault;
 }
 
-/*
-* Determine colors according to current color state
-*/
+/**
+ * @brief Determine colors according to current color state.
+ * @note See `docs/common/debugScreen.md:216` for detailed design rationale.
+ */
 static void psvDebugScreenSetColors(void) {
 	uint32_t *color_fg, *color_bg;
 
@@ -290,8 +211,10 @@ static size_t psvDebugScreenEscape(const unsigned char *str) {
 				continue;
 			// argument separator
 			case ';': argc++; continue;
-			// CSI commands
-			// save/restore position
+/**
+ * @brief CSI commands save/restore position.
+ * @note See `docs/common/debugScreen.md:293` for detailed design rationale.
+ */
 			case 's':
 				if (arg[0]<SAVE_STORAGES) { savedX[arg[0]] = coordX; savedY[arg[0]] = coordY; }
 				return i;
@@ -303,7 +226,10 @@ static size_t psvDebugScreenEscape(const unsigned char *str) {
 			case 'B': coordY += arg[0]    * (F)->size_h; return i;
 			case 'C': coordX += arg[0]    * (F)->size_w; return i;
 			case 'D': coordX -= arg[0]    * (F)->size_w; return i;
-			// cursor movement to beginning of next/previous line(s)
+/**
+ * @brief cursor movement to beginning of next/previous line(s).
+ * @note See `docs/common/debugScreen.md:306` for detailed design rationale.
+ */
 			case 'E': coordY += arg[0]    * (F)->size_h; coordX = 0; return i;
 			case 'F': coordY -= arg[0]    * (F)->size_h; coordX = 0; return i;
 			// cursor positioning
@@ -313,7 +239,10 @@ static size_t psvDebugScreenEscape(const unsigned char *str) {
 				coordY = (arg[0]-1) * (F)->size_h;
 				coordX = (arg[1]-1) * (F)->size_w;
 				return i;
-			// clear part of "J"=screen or "K"=Line, so J code re-uses part of K
+/**
+ * @brief clear part of "J"=screen or "K"=Line, so J code re-uses part of K.
+ * @note See `docs/common/debugScreen.md:316` for detailed design rationale.
+ */
 			case 'J':
 			case 'K':
 				if (arg[0]==0) { // from cursor to end of line/screen
@@ -354,7 +283,10 @@ static size_t psvDebugScreenEscape(const unsigned char *str) {
 							colors.inversion = 0;
 							continue;
 							break;
-						// set from color map or truecolor
+/**
+ * @brief set from color map or truecolor.
+ * @note See `docs/common/debugScreen.md:357` for detailed design rationale.
+ */
 						case 38: // foreground color
 						case 48: // background color
 							mode = arg[c] / 10;
@@ -385,7 +317,10 @@ static size_t psvDebugScreenEscape(const unsigned char *str) {
 							break;
 						// custom color reset
 						default:
-							// ANSI colors (30-37, 40-47, 90-97, 100-107)
+/**
+ * @brief ANSI colors (30-37, 40-47, 90-97, 100-107).
+ * @note See `docs/common/debugScreen.md:388` for detailed design rationale.
+ */
 							mode = arg[c] / 10;
 							if ((mode!=3) && (mode!=4) && (mode!=9) && (mode!=10)) continue; // skip unsupported modes
 							unit = arg[c] % 10;
@@ -482,7 +417,10 @@ int psvDebugScreenPuts(const char * _text) {
 			if (coordY < 0) coordY = 0; // prevent 0-based coordinate from producing a negative X/Y
 			continue;
 		}
-		// handle non-printable characters #1 (line-dependent codes)
+/**
+ * @brief handle non-printable characters #1 (line-dependent codes).
+ * @note See `docs/common/debugScreen.md:485` for detailed design rationale.
+ */
 		if (t == '\n') {
 			coordX = 0;
 			coordY += (F)->size_h;
@@ -501,17 +439,25 @@ int psvDebugScreenPuts(const char * _text) {
 		if ((coordY + (F)->height) > (SCREEN_HEIGHT)) {
 			coordX = coordY = 0;
 		}
-		// handle non-printable characters #2
+/**
+ * @brief handle non-printable characters #2.
+ * @note See `docs/common/debugScreen.md:504` for detailed design rationale.
+ */
 		if (t == '\t') {
 			coordX += (SCREEN_TAB_W) - (coordX % (SCREEN_TAB_W));
 			continue;
 		}
 
-		// draw glyph or dummy glyph (dotted line in the middle)
-		// works also with not byte-aligned glyphs
+/**
+ * @brief draw glyph or dummy glyph (dotted line in the middle) works also with not byte-aligned glyphs.
+ * @note See `docs/common/debugScreen.md:510` for detailed design rationale.
+ */
 		vram = ((uint32_t*)base) + coordX + (coordY * (SCREEN_FB_WIDTH));
 		row = 0;
-		// check if glyph is available in font
+/**
+ * @brief check if glyph is available in font.
+ * @note See `docs/common/debugScreen.md:514` for detailed design rationale.
+ */
 		if ((t > (F)->last) || (t < (F)->first)) {
 			drawDummy = 1;
 			bitmap_offset = 0;
@@ -524,7 +470,10 @@ int psvDebugScreenPuts(const char * _text) {
 			mask = 1 << 7;
 			for (col = (bitmap_offset % 8); col > 0; col--, mask >>= 1);
 		}
-		// special case: dummy glyph, clear to middle height
+/**
+ * @brief special case: dummy glyph, clear to middle height.
+ * @note See `docs/common/debugScreen.md:527` for detailed design rationale.
+ */
 		max_row = 0;
 		if (drawDummy) {
 			max_row = (F)->height / 2;
@@ -600,9 +549,10 @@ void psvDebugScreenGetColorStateCopy(ColorState *copy) {
 	}
 }
 
-/*
-* Return copy of pixel coordinates
-*/
+/**
+ * @brief Return copy of pixel coordinates.
+ * @note See `docs/common/debugScreen.md:603` for detailed design rationale.
+ */
 void psvDebugScreenGetCoordsXY(int *x, int *y) {
 	if (x) *x = coordX;
 	if (y) *y = coordY;
@@ -637,11 +587,15 @@ PsvDebugScreenFont *psvDebugScreenSetFont(PsvDebugScreenFont *font) {
 	return F;
 }
 
-/*
-* Return scaled-by-2 copy of font
-*/
+/**
+ * @brief Return scaled-by-2 copy of font.
+ * @note See `docs/common/debugScreen.md:640` for detailed design rationale.
+ */
 PsvDebugScreenFont *psvDebugScreenScaleFont2x(PsvDebugScreenFont *source_font) {
-	// works also with not byte-aligned glyphs
+/**
+ * @brief works also with not byte-aligned glyphs.
+ * @note See `docs/common/debugScreen.md:644` for detailed design rationale.
+ */
 	PsvDebugScreenFont *target_font;
 	size_t size;
 	size_t align;
@@ -658,10 +612,16 @@ PsvDebugScreenFont *psvDebugScreenScaleFont2x(PsvDebugScreenFont *source_font) {
 
 	if (!source_font) return NULL;
 
-	// allocate target structure and bitmap
+/**
+ * @brief allocate target structure and bitmap.
+ * @note See `docs/common/debugScreen.md:661` for detailed design rationale.
+ */
 	target_font = (PsvDebugScreenFont *)malloc(sizeof(PsvDebugScreenFont));
 	memset(target_font, 0, sizeof(PsvDebugScreenFont));
-	// copy and scale meta information
+/**
+ * @brief copy and scale meta information.
+ * @note See `docs/common/debugScreen.md:664` for detailed design rationale.
+ */
 	target_font->width = 2 * source_font->width;
 	target_font->height = 2 * source_font->height;
 	target_font->first = source_font->first;
@@ -669,7 +629,10 @@ PsvDebugScreenFont *psvDebugScreenScaleFont2x(PsvDebugScreenFont *source_font) {
 	target_font->size_w = 2 * source_font->size_w;
 	target_font->size_h = 2 * source_font->size_h;
 
-	// calculate size of target bitmap
+/**
+ * @brief calculate size of target bitmap.
+ * @note See `docs/common/debugScreen.md:672` for detailed design rationale.
+ */
 	size = target_font->width * target_font->height * (target_font->last - target_font->first + 1);
 	if (size <= 0) {
 		free(target_font);
@@ -679,11 +642,17 @@ PsvDebugScreenFont *psvDebugScreenScaleFont2x(PsvDebugScreenFont *source_font) {
 	size /= 8;
 	if (align) size++;
 
-	// allocate and initialize target bitmap
+/**
+ * @brief allocate and initialize target bitmap.
+ * @note See `docs/common/debugScreen.md:682` for detailed design rationale.
+ */
 	target_font->glyphs = (unsigned char *)malloc(size);
 	memset(target_font->glyphs, 0, size);
 
-	// scale source bitmap and store in target bitmap
+/**
+ * @brief scale source bitmap and store in target bitmap.
+ * @note See `docs/common/debugScreen.md:686` for detailed design rationale.
+ */
 	source_bitmap = source_font->glyphs;
 	source_mask = 1 << 7;
 	//
@@ -694,7 +663,10 @@ PsvDebugScreenFont *psvDebugScreenScaleFont2x(PsvDebugScreenFont *source_font) {
 	//
 	for (glyph = source_font->first; glyph <= source_font->last; glyph++) {
 		for (row = source_font->height; row > 0; row--) {
-			// Find beginning of next target row
+/**
+ * @brief Find beginning of next target row.
+ * @note See `docs/common/debugScreen.md:697` for detailed design rationale.
+ */
 			target_bitmap2 = target_bitmap + target_next_row_bytes; // advance full bytes
 			target_mask2 = target_mask; // advance remaining bits
 			for (col = target_next_row_bits; col > 0; col--, target_mask2 >>= 1) {
@@ -706,17 +678,26 @@ PsvDebugScreenFont *psvDebugScreenScaleFont2x(PsvDebugScreenFont *source_font) {
 				pixel = *source_bitmap & source_mask;
 				// Put pixels into target bitmap
 				for (count = 2; count > 0; count--) {
-					// duplicate column in origial row
+/**
+ * @brief duplicate column in origial row.
+ * @note See `docs/common/debugScreen.md:709` for detailed design rationale.
+ */
 					if (!target_mask) { target_bitmap++; target_mask = 1 << 7; } // no more bits: we advance to the next target byte
 					if (pixel) *target_bitmap |= target_mask;
 					target_mask >>= 1;
-					// duplicate column in duplicated row
+/**
+ * @brief duplicate column in duplicated row.
+ * @note See `docs/common/debugScreen.md:713` for detailed design rationale.
+ */
 					if (!target_mask2) { target_bitmap2++; target_mask2 = 1 << 7; } // no more bits: we advance to the next target byte
 					if (pixel) *target_bitmap2 |= target_mask2;
 					target_mask2 >>= 1;
 				}
 			}
-			// Next target row is directly behind duplicated row
+/**
+ * @brief Next target row is directly behind duplicated row.
+ * @note See `docs/common/debugScreen.md:719` for detailed design rationale.
+ */
 			target_bitmap = target_bitmap2;
 			target_mask = target_mask2;
 		}

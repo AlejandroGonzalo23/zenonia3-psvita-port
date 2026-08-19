@@ -1,10 +1,5 @@
-/*
- * audio.c -- ver audio.h para el contrato y las diferencias con Zenonia 2.
- *
- * Implementacion: un puerto BGM de sceAudioOut a 44100 Hz estereo y un thread
- * mezclador con Tremor (libvorbisidec). Cada voz streamea su OggVorbis_File;
- * las voces cuyo .ogg no es de 44100 Hz se resamplean lineal al vuelo
- * (16000 -> 44100 en este juego). Mono se duplica a estereo.
+/**
+ * @brief Port audio player, adapted from Zenonia 2 (same engine) with two real differences from Zenonia 3: 1.
  */
 
 #include <psp2/audioout.h>
@@ -24,7 +19,9 @@ extern void game_log(const char *fmt, ...);
 #define AUDIO_RATE 44100
 #define AUDIO_GRAIN 512
 
-// 1 BGM + 1 stream + 4 SFX simultaneos
+/**
+ * @brief Port audio player, adapted from Zenonia 2 (same engine) with two real differences from Zenonia 3: 1.
+ */
 #define VOICE_BGM    0
 #define VOICE_STREAM 1
 #define VOICE_SFX0   2
@@ -37,12 +34,15 @@ typedef struct {
     int channels;
     long rate;          // rate real del .ogg (44100 o 16000 en este juego)
     float gain;
-    // Estado del resampleador lineal (solo si rate != AUDIO_RATE)
+/**
+ * @brief Port audio player, adapted from Zenonia 2 (same engine) with two real differences from Zenonia 3: 1.
+ */
     float pos_frac;     // posicion fraccional dentro del stream fuente
     int16_t prev_l, prev_r; // ultimo frame fuente consumido (para interpolar)
     int have_prev;
-    // Staging de decodificacion PROPIO de la voz: el mezclador alterna entre
-    // voces, un buffer compartido descartaria frames ya decodificados.
+/**
+ * @brief Port audio player, adapted from Zenonia 2 (same engine) with two real differences from Zenonia 3: 1.
+ */
     int16_t stage[256];
     int stage_frames, stage_pos;
 } voice_t;
@@ -60,7 +60,9 @@ static void voice_close(voice_t *v) {
     }
 }
 
-// Lee UN frame fuente (L,R) de la voz; devuelve 0 en EOF definitivo (voz cerrada).
+/**
+ * @brief Read ONE source frame (L,R) of the voice; returns 0 in definitive EOF (closed voice).
+ */
 static int voice_next_src_frame(voice_t *v, int16_t *l, int16_t *r) {
     while (v->stage_pos >= v->stage_frames) {
         int bs;
@@ -81,8 +83,9 @@ static int voice_next_src_frame(voice_t *v, int16_t *l, int16_t *r) {
     return 1;
 }
 
-// Decodea `frames` frames estereo a AUDIO_RATE en `out` (intercalado LR),
-// resampleando lineal si la voz no es de 44100 Hz. Devuelve frames escritos.
+/**
+ * @brief Decodes `frames` stereo frames to AUDIO_RATE in `out` (interleaved LR),.
+ */
 static int voice_decode(voice_t *v, int16_t *out, int frames) {
     int done = 0;
 
@@ -97,7 +100,7 @@ static int voice_decode(voice_t *v, int16_t *out, int frames) {
         return done;
     }
 
-    // Resampleo lineal: step = srcRate / dstRate (< 1 para upsample)
+/**< @brief Resampleo lineal: step = srcRate / dstRate (< 1 para upsample). */
     float step = (float) v->rate / (float) AUDIO_RATE;
     while (done < frames && v->active) {
         if (!v->have_prev) {
@@ -105,7 +108,7 @@ static int voice_decode(voice_t *v, int16_t *out, int frames) {
             v->have_prev = 1;
             v->pos_frac = 0.0f;
         }
-        // Frame fuente siguiente para interpolar; si EOF, drena con el ultimo
+/**< @brief Next source frame to interpolate; if EOF, drain with the last one. */
         int16_t nl = v->prev_l, nr = v->prev_r;
         while (v->pos_frac >= 1.0f) {
             if (!voice_next_src_frame(v, &nl, &nr)) { v->have_prev = 0; break; }
@@ -114,10 +117,9 @@ static int voice_decode(voice_t *v, int16_t *out, int frames) {
         }
         if (!v->active || !v->have_prev) break;
 
-        // Con pos_frac en [0,1): interpolamos entre prev y el proximo. Para
-        // simplificar (y porque 16k->44.1k upsamplea ~2.76x), usamos el frame
-        // previo como valor -- interpolacion de orden 0 mejorada con el paso
-        // fraccional de arriba. Suficiente para SFX de 16 kHz de un juego 2D.
+/**
+ * @brief With pos_frac in [0,1): we interpolate between prev and the next.].
+ */
         out[done * 2]     = (int16_t)(v->prev_l * v->gain);
         out[done * 2 + 1] = (int16_t)(v->prev_r * v->gain);
         done++;
@@ -147,7 +149,9 @@ static int audio_thread(SceSize args, void *argp) {
         }
         sceKernelUnlockMutex(audio_mutex, 1);
 
-        // Bloquea hasta que el hardware consumio el bloque: marca el ritmo
+/**
+ * @brief Port audio player, adapted from Zenonia 2 (same engine) with two real differences from Zenonia 3: 1.
+ */
         sceAudioOutOutput(audio_port, mix);
     }
     return 0;
@@ -181,8 +185,7 @@ void audio_stop_bgm(void) {
 void audio_play(int snd_id, int vol, int is_loop) {
     if (audio_port < 0) return;
 
-    // ZenoniaUIControllerView.OnSoundPlay: vol==0 + isLoop es el comando
-    // "parar la musica actual", no un play.
+/**< @brief ZenoniaUIControllerView. */
     if (vol == 0 && is_loop) {
         audio_stop_bgm();
         return;
@@ -219,8 +222,9 @@ void audio_play(int snd_id, int vol, int is_loop) {
 
     voice_t *target = NULL;
     if (snd_id >= 1 && snd_id <= 15) {
-        // SoundPool (SFX 1..15 registrados en Zenonia3Launcher): voz libre o
-        // pisar la primera
+/**
+ * @brief SoundPool (SFX 1.).
+ */
         for (int i = VOICE_SFX0; i < NUM_VOICES; i++)
             if (!voices[i].active) { target = &voices[i]; break; }
         if (!target) target = &voices[VOICE_SFX0];
@@ -235,8 +239,7 @@ void audio_play(int snd_id, int vol, int is_loop) {
     target->loop = is_loop;
     target->channels = vi->channels;
     target->rate = vi->rate;
-    // NexusSound.setVolume(vol/10): mVolume = (vol/10)/10.0f -- escala 0..1
-    // con truncado entero, y vol<=0 silencia (isSoundON=false).
+/**< @brief NexusSound. */
     int vol10 = vol / 10;
     target->gain = vol10 > 10 ? 1.0f : (vol10 / 10.0f);
     if (target->gain <= 0.0f) { // vol>0 pero <10 -> algo audible igual

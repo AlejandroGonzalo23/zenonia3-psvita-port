@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
-## Esto incluye el toolchain de Vita, debe ir antes de project()
+## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
+## @note See `docs/CMakeLists.md:3` for detailed design rationale.
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   if(DEFINED ENV{VITASDK})
     set(CMAKE_TOOLCHAIN_FILE "$ENV{VITASDK}/share/vita.toolchain.cmake" CACHE PATH "toolchain file")
@@ -14,21 +15,13 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 ## Configuracion de la app
 set(VITA_APP_NAME "Zenonia 3")
-# ID unico de 9 caracteres. Distinto del de Zenonia 2 (PSVZ00002) para poder
-# tener ambos juegos instalados a la vez.
+## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
+## @note See `docs/CMakeLists.md:18` for detailed design rationale.
 set(VITA_TITLEID  "PSVZ00003")
 set(VITA_VERSION  "01.00")
 
-## Log verbose de cada llamada JNI de FalsoJNI. Imprescindible para el
-## primer arranque (Fase 3 del plan: metodologia de "un log a la vez"), pero
-## debe apagarse antes de medir rendimiento real -- cada linea implica un
-## sceIoOpen+sceIoWrite+sceIoClose (ver Fixes_Log de Prince of Persia
-## #12-13, y plan_zenonia3_port.md seccion de riesgos heredados).
-## Apagado desde que el juego llega al menu: con el nivel 0, el 79% del log
-## eran lineas [JNI][...] (3579 de 4520 en log_1783657108) y el arranque
-## tardaba minutos por el fflush por linea. Con nivel 2 (WARN) siguen
-## visibles [JNI WARN]/[JNI ERR], que son los que diagnostican bugs reales.
-## Reactivar (=0) solo si hace falta rastrear una llamada JNI puntual.
+## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
+## @note See `docs/CMakeLists.md:23` for detailed design rationale.
 option(ENABLE_VERBOSE_JNI_LOG "Log every FalsoJNI call (debug only, slow)" OFF)
 if (ENABLE_VERBOSE_JNI_LOG)
   add_definitions(-DFALSOJNI_DEBUGLEVEL=0)
@@ -36,44 +29,15 @@ else()
   add_definitions(-DFALSOJNI_DEBUGLEVEL=2)
 endif()
 
-## Oculta la cruceta nativa + sus hasta 5 botones de accion
-## (GVUIPlayerController, la unica instancia de esa clase en todo el juego --
-## ver decompiled_so/out_ghidra.c:28609/28466 y la nota completa en
-## loader/dynlib.c junto a zenonia_install_hide_dpad_hook()). Se hookea su
-## constructor y se pone en 0 el contador interno de "objetos activos" que
-## GVUIController::Draw()/PointerPress()/Move()/Release() usan como limite de
-## su loop -- no dibuja NI recibe touch, sin tocar ningun otro controller
-## (barra de vida/mana, minimapa, etc., cada uno con su propia instancia). La
-## Vita ya tiene D-Pad/botones fisicos mapeados 1:1 (ver btn_map en
-## loader/main.c), asi que no se pierde ninguna funcionalidad real.
-## Para reactivar la cruceta/botones en pantalla: pasar
-## -DHIDE_VIRTUAL_GAMEPAD=OFF a cmake (o cambiar el default de abajo a OFF) y
-## recompilar.
+## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
+## @note See `docs/CMakeLists.md:32` for detailed design rationale.
 option(HIDE_VIRTUAL_GAMEPAD "Hide the game's on-screen D-pad + action button cluster (Dpad.pzx/illusiaDpad.pzx); physical Vita buttons are already mapped" ON)
 if (HIDE_VIRTUAL_GAMEPAD)
   add_definitions(-DZENONIA_HIDE_DPAD_UI=1)
 endif()
 
-## Prueba A/B de rendimiento (ver CLAUDE.md seccion de optimizaciones).
-##
-## RGB565_CONVERT_MODE elige UNA de 4 estrategias mutuamente excluyentes para
-## el framebuffer de software 400x240 que el motor sube por textura RGB565
-## varias veces por frame (loader/dynlib.c, convert_rgb565_to_rgba8888 +
-## glTexImage2D_wrapper/glTexSubImage2D_wrapper):
-##   - SCALAR: division entera por pixel (baseline original).
-##   - LUT:    tabla precomputada -- mismo resultado exacto que SCALAR, sin
-##             dividir por pixel.
-##   - NEON:   intrinsics NEON (vld1q_u16/vst4_u8) con expansion de bits por
-##             replicacion -- mismo enfoque que un sampler de hardware R5G6B5,
-##             difiere de SCALAR/LUT por hasta 1 LSB (imperceptible).
-##   - NATIVE: NO convierte nada -- sube el RGB565 tal cual y deja que el
-##             sampler de GXM lo lea nativo. SIN CONFIRMAR EN HARDWARE (ver
-##             comentario junto a glTexImage2D_wrapper); si el log muestra
-##             textura corrupta/canal de color desplazado, volver a SCALAR/LUT.
-## Default NATIVE + OPTIMIZE_NEON_FIXED=OFF abajo: confirmado en consola real
-## como la combinacion mas estable (ver README, seccion "Performance Tuning"),
-## junto con LOCK_FPS_30=ON de mas abajo -- esta es la config que build.sh
-## produce como build/zenonia_3.vpk (version final).
+## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
+## @note See `docs/CMakeLists.md:39` for detailed design rationale.
 set(RGB565_CONVERT_MODE "NATIVE" CACHE STRING "RGB565->RGBA8888 conversion strategy: SCALAR, LUT, NEON o NATIVE (perf A/B test)")
 set_property(CACHE RGB565_CONVERT_MODE PROPERTY STRINGS SCALAR LUT NEON NATIVE)
 if (RGB565_CONVERT_MODE STREQUAL "SCALAR")
@@ -88,26 +52,15 @@ else()
   message(FATAL_ERROR "RGB565_CONVERT_MODE debe ser SCALAR, LUT, NEON o NATIVE (valor recibido: ${RGB565_CONVERT_MODE})")
 endif()
 
-## Intrinsics NEON (vld1q_s32/vcvtq_f32_s32/vmulq_f32) en vez del loop escalar
-## para la conversion GL_FIXED (Q16.16) -> float de vertex/color/texcoord
-## arrays en glDrawArrays_wrapper -- corre por cada vertice de cada draw
-## call, cada frame. Resultado bit-a-bit identico al escalar (ver comentario
-## junto a fixed_to_float_neon en dynlib.c) -- eje de A/B independiente del
-## de RGB565_CONVERT_MODE de arriba.
+## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
+## @note See `docs/CMakeLists.md:55` for detailed design rationale.
 option(OPTIMIZE_NEON_FIXED "Use NEON SIMD instead of scalar division for GL_FIXED (Q16.16) vertex/color/texcoord conversion (perf A/B test)" OFF)
 if (OPTIMIZE_NEON_FIXED)
   add_definitions(-DOPTIMIZE_NEON_FIXED=1)
 endif()
 
-## Con RGB565_CONVERT_MODE=NATIVE el frame renderiza tan rapido que cae justo
-## en el borde del vblank del panel (60Hz) -- el vsync interno de vitaGL (que
-## solo espera 1 vblank) da un framerate que rebota entre ~40 y ~60 en vez de
-## estabilizarse. Esta opcion apaga ese vsync (vglWaitVblankStart(GL_FALSE)
-## en gl_init()) y fuerza manualmente 2 vblanks por frame
-## (sceDisplayWaitVblankStartMulti(2) en el loop principal, main.c) -- cap
-## duro a 30fps estable y sin tearing. Inocuo con los otros modos de
-## RGB565_CONVERT_MODE (20-24fps ya medidos): si el frame ya tardo mas de 2
-## vblanks, la espera manual no hace nada, no empeora el framerate real.
+## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
+## @note See `docs/CMakeLists.md:62` for detailed design rationale.
 option(LOCK_FPS_30 "Cap framerate at a stable 30fps (2 vblanks) instead of vitaGL's default single-vblank vsync -- fixes the ~40-60fps jitter seen with RGB565_CONVERT_MODE=NATIVE" ON)
 if (LOCK_FPS_30)
   add_definitions(-DLOCK_FPS_30=1)
@@ -115,9 +68,8 @@ endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-# ATTRIBUTE2=12 pide el presupuesto de memoria extendido -- sin esto,
-# SceShaccCg (compilador de shaders Cg de vitaGL) puede fallar al iniciar.
-# Copiado de la config confirmada funcionando en Zenonia 2 / Prince of Persia.
+## @brief Prueba A/B de rendimiento (ver CLAUDE.
+## @note See `docs/CMakeLists.md:71` for detailed design rationale.
 set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d PARENTAL_LEVEL=1 -d ATTRIBUTE2=12")
 
 include_directories(
@@ -150,7 +102,8 @@ target_link_libraries(${PROJECT_NAME}
   vitashark
   mathneon
   m
-  # Decodificador OGG Vorbis (Tremor, punto fijo) para loader/audio.c
+## @brief Intrinsics NEON (vld1q_s32/vcvtq_f32_s32/vmulq_f32) en vez del loop escalar para la conversion GL_FIXED (Q16.
+## @note See `docs/CMakeLists.md:105` for detailed design rationale.
   vorbisidec
   ogg
   -Wl,--whole-archive pthread -Wl,--no-whole-archive
@@ -182,19 +135,9 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   FILE sce_sys/livearea/contents/bg0.png sce_sys/livearea/contents/bg0.png
   FILE sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
   FILE sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml
-  # Fuente TTF para el rasterizado GFA (loader/font.c): NanumGothic, licencia
-  # OFL (cobertura Hangul completa + Latin -- el juego setea strings coreanos)
+## @brief Decodificador OGG Vorbis (Tremor, punto fijo) para loader/audio.
+## @note See `docs/CMakeLists.md:138` for detailed design rationale.
   FILE font.ttf font.ttf
-  # Overlays Android (logo/titulo/menu) que el .so nativo no dibuja -- ver
-  # loader/androidui.c -- y el texto de ABOUT/HELP (loader/htmltext.c/
-  # htmlview.c) usan los PNG/HTML reales del APK original (variantes
-  # "globales"/en ingles). Esos archivos tienen copyright de Gamevil y YA NO
-  # se empaquetan aca: se leen en runtime desde
-  # ux0:data/zenonia3/drawable/ y ux0:data/zenonia3/html/ (memoria externa,
-  # subidos por FTP con manage_vita.py) en vez de instalarse dentro del VPK
-  # bajo ux0:app/${VITA_TITLEID}/ -- mantiene el VPK distribuible sin
-  # material con copyright y evita reinstalar el paquete entero cada vez que
-  # cambia un PNG. androidui.c/htmlview.c igual mantienen un fallback a
-  # app0:drawable/ / app0:html/ (adentro del VPK) por si algun build local
-  # decide empaquetarlos de nuevo a mano.
+## @brief Decodificador OGG Vorbis (Tremor, punto fijo) para loader/audio.
+## @note See `docs/CMakeLists.md:141` for detailed design rationale.
 )

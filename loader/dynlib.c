@@ -24,66 +24,28 @@
 extern void game_log(const char *fmt, ...);
 extern volatile int g_ui_status;
 
-// El logo/titulo/menu (ui_status 0-2, ver ZenoniaUIControllerView.java:
-// UI_STATUS_LOGO/TITLE/MAINMENU) se ve blanco y despues negro (confirmado
-// por el usuario), sin crash -- CMvTitleState::DrawZeroGrade/DrawTeamLogo
-// (out_ghidra.c:105397/105434) hacen un DrawFillRect blanco y LUEGO una
-// llamada virtual que dibuja el logo/arte encima con un fade de alpha
-// (contador interno < 0x10 -> alpha parcial, si no -> opaco). Hipotesis sin
-// confirmar todavia (investigacion estatica, sin acceso a consola real):
-// el fade nunca llega a alpha=255/blend opaco, o el blend/textencv activo
-// deja el quad invisible. Los logs de glColorPointer/glTexEnvf/glBlendFunc ya
-// existian pero estaban topados a los primeros 10-20 llamados (aca ya paso
-// el menu) -- se saca el tope MIENTRAS el ui_status este en ese rango para
-// poder confirmar con UN log mas en consola real cual de las dos hipotesis
-// es la correcta. Quitar este helper (y los `|| zenonia_verbose_ui()` que lo
-// usan) una vez que el bug de fondo este resuelto y confirmado.
+/**
+ * @brief The logo/title/menu (ui_status 0-2, see ZenoniaUIControllerView.java: UI_STATUS_LOGO/TITLE/MAINMENU) looks white and then black (confirmed).
+ */
 static int zenonia_verbose_ui(void) {
     return g_ui_status >= 0 && g_ui_status <= 2;
 }
 
-// --- Ocultar cruceta + botones nativos (GVUIPlayerController) ---
-//
-// Primer intento (por textura, ver git log) NO funcionaba: confirmado con un
-// log real que Dpad.pzx sube sus graficos a un atlas GL COMPARTIDO via
-// glTexSubImage2D (nunca un glTexImage2D nuevo despues de su readAssets), asi
-// que "etiquetar la proxima textura subida" nunca etiquetaba nada -- la
-// cruceta y los botones seguian visibles siempre pese al toggle.
-//
-// Solucion real, mas simple y sin tocar nada de GL: GVUIController::Draw()
-// (out_ghidra.c:26330, simetrico con PointerPress/Move/Release un poco mas
-// abajo en el mismo archivo) es un simple `for (i in 0..*(this+0x19c))
-// { dibujar hijo[i] }` -- si ese contador de "objetos activos" es 0, el
-// controller no dibuja NI recibe touch de ninguno de sus hijos, sin afectar a
-// ningun otro GVUIController (barra de vida/mana, minimapa, etc., cada uno
-// con su propia instancia y su propio contador). GVUIPlayerController (la
-// cruceta + hasta 5 botones de accion, confirmado por
-// GVUIPlayerController::InitialPlayerPadSet(), out_ghidra.c:28466) es la
-// UNICA instancia de esa clase en todo el juego -- alcanza con hookear su
-// constructor (_ZN20GVUIPlayerControllerC2Ev), dejar que corra normal (arma
-// los 5 objetos igual que siempre) y despues poner ESE contador en 0. No hace
-// falta re-hookear Draw() para todos los demas controllers ni tocar el estado
-// de GL en absoluto -- el touch fisico de la Vita ya cubre lo mismo via
-// btn_map en main.c, asi que perder el hit-test de estos botones puntuales no
-// quita ninguna funcionalidad real.
-//
-// Reversible sin tocar este archivo: recompilar con
-// `-DHIDE_VIRTUAL_GAMEPAD=OFF` (ver CMakeLists.txt) deja este hook sin
-// instalar (zenonia_install_hide_dpad_hook() se vuelve un no-op).
+/**
+ * @brief offset committed in GVUIController::GVUIController() (out_ghidra.c:26369, `memset(this+8,0,400); *(int*)(this+0x19c)=0;`) and reused.
+ */
 #ifdef ZENONIA_HIDE_DPAD_UI
 static so_hook g_player_controller_ctor_hook;
 
-// offset confirmado en GVUIController::GVUIController() (out_ghidra.c:26369,
-// `memset(this+8,0,400); *(int*)(this+0x19c)=0;`) y reusado identico por
-// Draw()/PointerPress()/PointerMove()/PointerRelease() como limite del loop
-// sobre los hasta 100 punteros a hijo que arrancan en this+8.
+/**
+ * @brief offset committed in GVUIController::GVUIController() (out_ghidra.c:26369, `memset(this+8,0,400); *(int*)(this+0x19c)=0;`) and reused.
+ */
 #define GVUI_CONTROLLER_ACTIVE_COUNT_OFFSET 0x19c
 
 static void GVUIPlayerController_ctor_hook(void *this) {
-    // Restaurar el codigo original, correr el constructor real tal cual (arma
-    // GVUIDirectionPad + 5 GVUIBatterButton exactamente como en Android), y
-    // recien despues apagar el contador -- si lo hicieramos antes, la cruceta
-    // ni siquiera terminaria de construirse bien.
+/**
+ * @brief Call AFTER so_relocate/so_resolve (you need the module already with dynsym/dynstr resolved, see so_symbol()) and BEFORE the first call to.
+ */
     so_unhook(&g_player_controller_ctor_hook);
     ((void (*)(void *)) g_player_controller_ctor_hook.thumb_addr)(this);
     *(int *)((char *) this + GVUI_CONTROLLER_ACTIVE_COUNT_OFFSET) = 0;
@@ -91,10 +53,9 @@ static void GVUIPlayerController_ctor_hook(void *this) {
 }
 #endif
 
-// Llamar DESPUES de so_relocate/so_resolve (necesita el modulo ya con
-// dynsym/dynstr resueltos, ver so_symbol()) y ANTES de la primera llamada a
-// cualquier Native*() del juego -- GVUIPlayerController se construye durante
-// el arranque normal del motor.
+/**
+ * @brief Call AFTER so_relocate/so_resolve (you need the module already with dynsym/dynstr resolved, see so_symbol()) and BEFORE the first call to.
+ */
 void zenonia_install_hide_dpad_hook(so_module *mod) {
 #ifdef ZENONIA_HIDE_DPAD_UI
     uintptr_t ctor_addr = so_symbol(mod, "_ZN20GVUIPlayerControllerC2Ev");
@@ -116,7 +77,9 @@ int* __errno(void) {
     return &dummy_errno;
 }
 
-// Wrappers para OpenGL de punto fijo (GLES1)
+/**
+ * @brief Wrappers for fixed point OpenGL (GLES1).
+ */
 void glClearColorx_wrapper(int r, int g, int b, int a) {
     glClearColor(r / 65536.0f, g / 65536.0f, b / 65536.0f, a / 65536.0f);
 }
@@ -125,12 +88,9 @@ void glTexParameterx_wrapper(GLenum target, GLenum pname, int param) {
     glTexParameteri(target, pname, param);
 }
 
-// Prueba A/B de 4 estrategias para el framebuffer de software RGB565 que el
-// motor sube por textura (ver CLAUDE.md / CMakeLists.txt: RGB565_CONVERT_MODE
-// -- SCALAR/LUT/NEON convierten a RGBA8888 en CPU, solo cambia como; NATIVE
-// no convierte nada, sube el RGB565 tal cual y deja que el sampler de GXM lo
-// lea nativo). Selecciona UNA sola de las 4 (mutuamente excluyentes, no son
-// flags independientes).
+/**
+ * @brief 4-strategy A/B testing for the RGB565 software framebuffer that the motor uploads per texture (see CLAUDE.md / CMakeLists.txt).
+ */
 #if defined(RGB565_MODE_NEON)
 static void convert_rgb565_to_rgba8888_neon(const uint16_t *src, uint8_t *dst, int npix) {
     int i = 0;
@@ -139,12 +99,7 @@ static void convert_rgb565_to_rgba8888_neon(const uint16_t *src, uint8_t *dst, i
         uint16x8_t r5 = vshrq_n_u16(p, 11);
         uint16x8_t g6 = vandq_u16(vshrq_n_u16(p, 5), vdupq_n_u16(0x3F));
         uint16x8_t b5 = vandq_u16(p, vdupq_n_u16(0x1F));
-        // Replicacion de bits (v<<n)|(v>>(n_bits-n)) -- expansion estandar de
-        // 5/6 bits a 8 bits en hardware grafico (es EXACTAMENTE lo que hace
-        // el sampler de GXM al filtrar una textura R5G6B5 nativa -- ver el
-        // modo NATIVE mas abajo). Difiere del *255/31 de SCALAR/LUT por hasta
-        // 1 LSB en valores intermedios (p.ej. v=16: 132 vs 131) -- imperceptible
-        // a nivel visual, no es un bug de precision sino una formula distinta.
+/**< @brief Wrappers for fixed point OpenGL (GLES1). */
         uint8x8_t r8 = vmovn_u16(vorrq_u16(vshlq_n_u16(r5, 3), vshrq_n_u16(r5, 2)));
         uint8x8_t g8 = vmovn_u16(vorrq_u16(vshlq_n_u16(g6, 2), vshrq_n_u16(g6, 4)));
         uint8x8_t b8 = vmovn_u16(vorrq_u16(vshlq_n_u16(b5, 3), vshrq_n_u16(b5, 2)));
@@ -162,13 +117,9 @@ static void convert_rgb565_to_rgba8888_neon(const uint16_t *src, uint8_t *dst, i
 }
 #endif
 
-// Buffer de conversion reutilizado entre llamadas: el motor sube el
-// framebuffer 800x480 completo antes de CADA quad (varias veces por frame),
-// y hacer malloc/free de 1.5 MB en cada upload era parte del costo por
-// frame. El resultado es valido solo hasta la proxima llamada — los call
-// sites lo consumen de inmediato en glTexImage2D/glTexSubImage2D.
-// No se llama en modo NATIVE (ver call sites) -- se deja compilada igual por
-// si se necesita volver a comparar en runtime.
+/**
+ * @brief Conversion buffer reused between calls.
+ */
 void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     static uint8_t *conv_buf = NULL;
     static int conv_buf_cap = 0;
@@ -177,11 +128,7 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     uint16_t *src = (uint16_t *)pixels;
     int npix = width * height;
     if (npix * 4 > conv_buf_cap) {
-        // Chequear el resultado antes de pisar conv_buf/conv_buf_cap: si
-        // realloc falla, devuelve NULL y el bloque viejo sigue vivo -- pisar
-        // conv_buf igual lo perderia (leak) Y dejaria conv_buf_cap "grande"
-        // con conv_buf en NULL, haciendo que la proxima llamada se salte el
-        // realloc (cree que ya hay lugar) y escriba sobre un dst NULL.
+/**< @brief Conversion buffer reused between calls. */
         uint8_t *new_buf = (uint8_t *)realloc(conv_buf, npix * 4);
         if (!new_buf) {
             game_log("[GL] convert_rgb565_to_rgba8888: realloc fallo para %d bytes\n", npix * 4);
@@ -193,10 +140,7 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     uint8_t *dst = conv_buf;
 
 #if defined(RGB565_MODE_LUT)
-    // Mismo resultado exacto que SCALAR -- son las mismas 3 formulas de
-    // expansion de bits, precomputadas una sola vez en vez de recalculadas
-    // (con division entera) en cada uno de los hasta 96000 pixeles que se
-    // convierten por upload.
+/**< @brief Conversion buffer reused between calls. */
     static uint8_t r5_to_8[32], g6_to_8[64], b5_to_8[32];
     static int lut_ready = 0;
     if (!lut_ready) {
@@ -238,17 +182,9 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     return dst;
 }
 
-// El motor sube su framebuffer interno de software (400x240, ver Fase 1 del
-// plan) en RGB565. SCALAR/LUT/NEON lo convierten a RGBA8888 en CPU antes de
-// subirlo (mismo bug confirmado en hardware real para Zenonia 2, mismo
-// motor). NATIVE es la variante sin conversion: GL_UNSIGNED_SHORT_5_6_5 esta
-// definido en vitaGL.h (0x8363) y SceGxm soporta R5G6B5 nativo en el
-// sampler, asi que en teoria el motor puede subir el RGB565 tal cual y la
-// GPU lo filtra sola -- SIN CONFIRMAR EN HARDWARE (el comentario original
-// heredado de Zenonia 2 decia "vitaGL no lo maneja igual que el motor
-// original espera" sin dejar evidencia de que se haya probado el passthrough
-// puro; si aparece textura corrupta/canal de color desplazado en el log,
-// ese es el primer sospechoso).
+/**
+ * @brief The engine uploads its internal software framebuffer (400x240, see Phase 1 of the plan) in RGB565.
+ */
 void glTexImage2D_wrapper(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void *pixels) {
     static int img_log = 0;
     if (img_log < 10) {
@@ -273,7 +209,9 @@ void glTexImage2D_wrapper(GLenum target, GLint level, GLint internalformat, GLsi
         glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
     }
 
-    // Forzar filtros min/mag para que la textura no se trate como incompleta por falta de mipmaps
+/**
+ * @brief Force min/mag filters so that the texture is not treated as incomplete due to lack of mipmaps.
+ */
     glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -308,13 +246,9 @@ void glTexSubImage2D_wrapper(GLenum target, GLint level, GLint xoffset, GLint yo
     if (err != GL_NO_ERROR) game_log("[GL] glTexSubImage2D ERROR: %x\n", err);
 }
 
-// vitaGL no consume arrays de vertices GL_FIXED correctamente (misma clase de
-// bug que glClearColorx_wrapper/glTexParameterx_wrapper arriba). Este motor
-// (derivado de J2ME/BREW) manda datos de vertices en punto fijo Q16.16; sin
-// esta conversion, vitaGL lee los enteros crudos como si fueran floats y la
-// geometria queda fuera del frustum (pantalla en blanco aunque el motor siga
-// renderizando frames). glVertexPointer_wrapper diferisce la conversion hasta
-// glDrawArrays_wrapper, que es donde se sabe cuantos vertices hay.
+/**
+ * @brief Force min/mag filters so that the texture is not treated as incomplete due to lack of mipmaps.
+ */
 static const int32_t *pending_fixed_verts = NULL;
 static GLint pending_fixed_size = 0;
 static GLsizei pending_fixed_stride = 0;
@@ -334,13 +268,9 @@ static GLfloat *fixed_texcoord_buf = NULL;
 static int fixed_texcoord_buf_cap = 0;
 
 #ifdef OPTIMIZE_NEON_FIXED
-// Prueba A/B contra el loop escalar (ver CLAUDE.md / CMakeLists.txt:
-// OPTIMIZE_NEON_FIXED). Solo valido cuando el array es tightly-packed
-// (stride_elems == size, el caso normal para estos 3 atributos en este
-// motor) -- el llamador cae al loop escalar original si no lo es, en vez de
-// asumir. Resultado bit-a-bit identico al escalar: dividir por 65536.0f o
-// multiplicar por su reciproco (1/65536, potencia de 2 exacta en float) no
-// introduce redondeo extra.
+/**
+ * @brief A/B test against the scalar loop (see CLAUDE.md / CMakeLists.txt: OPTIMIZE_NEON_FIXED). Only valid when the array is tightly-packed.
+ */
 static void fixed_to_float_neon(const int32_t *src, GLfloat *dst, int total_elems) {
     int i = 0;
     float32x4_t scale = vdupq_n_f32(1.0f / 65536.0f);
@@ -366,9 +296,9 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
         int needed_verts = first + count;
         int needed_floats = needed_verts * pending_fixed_size;
         if (needed_floats > fixed_vert_buf_cap) {
-            // Ver nota en convert_rgb565_to_rgba8888: si realloc falla,
-            // pisar fixed_vert_buf/cap igual perderia el bloque viejo y
-            // dejaria el loop de mas abajo escribiendo sobre un puntero NULL.
+/**
+ * @brief A/B test against the scalar loop (see CLAUDE.md / CMakeLists.txt: OPTIMIZE_NEON_FIXED). Only valid when the array is tightly-packed.
+ */
             GLfloat *new_buf = (GLfloat *)realloc(fixed_vert_buf, needed_floats * sizeof(GLfloat));
             if (!new_buf) {
                 game_log("[GL] glDrawArrays: realloc de fixed_vert_buf fallo (%d floats)\n", needed_floats);
@@ -458,13 +388,9 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
     glDrawArrays(mode, first, count);
 }
 
-// Sin limite de log hasta ahora -- el motor llama esto por cada
-// sprite/textura dibujada, TODOS los frames (a diferencia de sus vecinos en
-// este archivo, que ya capan a las primeras ~10-20 llamadas). Cada
-// game_log() hace fprintf+fflush sincronico (I/O bloqueante a disco, mismo
-// costo que ENABLE_VERBOSE_JNI_LOG documenta en CLAUDE.md) -- sin este cap
-// era un fflush por sprite dibujado, suficiente para tirar el framerate de
-// 60 a ~13 fps sostenidos en consola real.
+/**
+ * @brief No log limit so far.
+ */
 void glTexEnvf_wrapper(GLenum target, GLenum pname, GLfloat param) {
     static int log = 0;
     if (log < 10) {
@@ -474,8 +400,9 @@ void glTexEnvf_wrapper(GLenum target, GLenum pname, GLfloat param) {
     glTexEnvf(target, pname, param);
 }
 
-// Sin wrapper hasta ahora (pasaba directo a vitaGL) -- se agrega SOLO para
-// loguear durante logo/titulo/menu, ver nota de zenonia_verbose_ui() arriba.
+/**
+ * @brief Without wrapper until now (went directly to vitaGL).
+ */
 void glBlendFunc_wrapper(GLenum sfactor, GLenum dfactor) {
     if (zenonia_verbose_ui()) {
         game_log("[GL] glBlendFunc sfactor=%x dfactor=%x ui_status=%d\n", sfactor, dfactor, g_ui_status);
@@ -541,9 +468,9 @@ void glColorPointer_wrapper(GLint size, GLenum type, GLsizei stride, const void 
     }
     glEnableClientState(GL_COLOR_ARRAY);
     static int log_colors = 0;
-    // Sin tope mientras dure logo/titulo/menu (ver zenonia_verbose_ui()) --
-    // el alfa de este color es la pista clave para confirmar/descartar la
-    // hipotesis del fade pegado en DrawZeroGrade/DrawTeamLogo.
+/**
+ * @brief struct stat with the bionic layout (Android ARM 32-bit, NDK android-9) -- It is NOT the one in newlib/vitasdk.
+ */
     if (pointer && (log_colors < 20 || zenonia_verbose_ui())) {
         if (type == GL_FIXED) {
             int32_t *c = (int32_t *)pointer;
@@ -648,12 +575,9 @@ void glViewport_wrapper(GLint x, GLint y, GLsizei width, GLsizei height) {
     glViewport(0, 0, 960, 544);
 }
 
-// Pass-through deliberado: el motor manda una proyeccion CENTRADA
-// (-400..400, -240..240) y sus vertices de quad de pantalla completa usan ese
-// mismo sistema (GL_FIXED -400..400/-240..240, confirmado en los logs).
-// Forzar aqui un sistema con origen en la esquina (0..800, 480..0) desplaza
-// ese quad a un solo cuadrante de la pantalla e invierte Y — regresion real
-// vista en consola (cuadro chico blanco sobre negro, log_1783657108).
+/**
+ * @brief Deliberate pass-through.
+ */
 void glOrthof_wrapper(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat zNear, GLfloat zFar) {
     static int log = 0;
     if (log < 10) {
@@ -669,7 +593,9 @@ void glOrthox_wrapper(GLint left, GLint right, GLint bottom, GLint top, GLint zN
         game_log("[GL] glOrthox left=%d right=%d bottom=%d top=%d\n", left, right, bottom, top);
         log++;
     }
-    // Convert from fixed point (Q16.16) to float
+/**
+ * @brief Convert from fixed point (Q16.16) to float.
+ */
     glOrthof_wrapper(left / 65536.0f, right / 65536.0f, bottom / 65536.0f, top / 65536.0f, zNear / 65536.0f, zFar / 65536.0f);
 }
 
@@ -683,14 +609,9 @@ void __cxa_type_match() {}
 void __gnu_Unwind_Find_exidx() {}
 void __stack_chk_fail() {}
 
-// Registro de destructores estaticos de C++ (llamados normalmente al
-// dlclose()/exit() de una libreria dinamica real). Este loader nunca
-// descarga el .so ni llama exit() de forma ordenada -- el proceso termina
-// con sceKernelExitProcess() -- asi que no hace falta ejecutar los
-// destructores registrados: alcanza con no-ops que devuelvan éxito. Faltaban
-// en la tabla de imports pese a estar confirmados en la Fase 1 del plan
-// (objdump -T | grep UND), causando "Unknown symbol" y crash real en
-// consola (ver port_progress.md).
+/**
+ * @brief Registering C++ static destructors (normally called dlclose()/exit() from a real dynamic library).
+ */
 int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle) {
     (void) func; (void) arg; (void) dso_handle;
     return 0;
@@ -703,20 +624,9 @@ int __aeabi_atexit(void *arg, void (*func)(void *), void *dso_handle) {
 }
 int __stack_chk_guard = 0;
 
-// pthread_mutex_t/pthread_cond_t en VitaSDK son en realidad PUNTEROS
-// (typedef struct pthread_mutex_t_ * pthread_mutex_t;) a una estructura
-// interna que aloca pthread_mutex_init(). El .so esta compilado contra
-// Bionic (Android), donde un mutex/condvar estatico declarado con
-// PTHREAD_MUTEX_INITIALIZER/PTHREAD_COND_INITIALIZER queda en CEROS sin
-// llamar nunca a pthread_mutex_init en tiempo de ejecucion -- Bionic esta
-// disenado para tratar esos ceros como "mutex valido, sin lockear" de
-// forma nativa. En VitaSDK esos mismos ceros son un puntero NULL real, y
-// pthread_mutex_lock/unlock de PTE (pthreads-embedded) lo desreferencian
-// sin chequear, crasheando (confirmado en consola real: Data abort dentro
-// de pthread_mutex_unlock, llamado desde el node-allocator interno de
-// libstdc++ sobre un mutex estatico nunca inicializado -- ver
-// port_progress.md). Se detecta el puntero NULL y se inicializa on-demand
-// antes de usarlo, en vez de pasar el valor crudo a la implementacion real.
+/**
+ * @brief pthread_mutex_t/pthread_cond_t in VitaSDK are actually POINERS (typedef struct pthread_mutex_t_ * pthread_mutex_t;) to a structure internal.
+ */
 int pthread_mutex_lock_wrapper(pthread_mutex_t *mutex) {
     if (mutex && (*mutex == NULL || (intptr_t)*mutex == 0x4000)) {
         *mutex = NULL;
@@ -773,9 +683,9 @@ void* realloc_wrapper(void* ptr, size_t size) {
 
 void translate_path(const char* in_path, char* out_path, size_t out_size) {
     if (strncmp(in_path, "ux0:", 4) == 0) {
-        // strncpy no garantiza terminador si in_path >= out_size (256, ver
-        // fopen_hook/stat_hook/access_hook) -- snprintf trunca y siempre
-        // termina en '\0', evitando leer basura de stack como path.
+/**
+ * @brief strncpy no garantiza terminador si in_path >= out_size (256, ver).
+ */
         snprintf(out_path, out_size, "%s", in_path);
         return;
     }
@@ -789,13 +699,9 @@ void translate_path(const char* in_path, char* out_path, size_t out_size) {
     snprintf(out_path, out_size, "ux0:data/zenonia3/assets/%s", relative);
 }
 
-// Igual que glTexEnvf_wrapper mas arriba: sin cap, este log corria por CADA
-// fopen que hace el motor (un asset .pzx/.zt1 por sprite/animacion, muchos
-// por frame durante gameplay) -- cada game_log() es un fprintf+fflush
-// sincronico a ux0:, la misma clase de bug que ya tiro el framerate de 60 a
-// ~13fps en glTexEnvf (ver commit "Cap excessive GL logging"). fopen_hook/
-// stat_hook/access_hook son los 3 puntos de I/O de archivo mas calientes del
-// loader y eran los unicos sin cap.
+/**
+ * @brief strncpy does not guarantee terminator if in_path >= out_size (256, see fopen_hook/stat_hook/access_hook).
+ */
 FILE* fopen_hook(const char* path, const char* mode) {
     char new_path[256];
     translate_path(path, new_path, sizeof(new_path));
@@ -807,16 +713,9 @@ FILE* fopen_hook(const char* path, const char* mode) {
     return fopen(new_path, mode);
 }
 
-// struct stat con el layout de bionic (Android ARM 32-bit, NDK android-9) --
-// NO es el de newlib/vitasdk. El motor lee directamente st_mode en el offset
-// 16 y st_size en el 48 (confirmado en Zenonia 2 desensamblando
-// MC_fsFileAttribute -- mismo motor y mismo consumidor aqui, ver
-// out_ghidra.c:150281: los offsets que Ghidra decompila para el stat local
-// coinciden con bionic). Pasarle el struct stat de newlib deja esos offsets
-// con basura de stack: en Zenonia 2, al cargar una partida guardada, el
-// "tamano" leido era un puntero del heap (MALLOC FAILED FOR SIZE 0x81340CE0)
-// y el motor crasheaba -- fix portado ANTES de que el sintoma aparezca aqui
-// (Zenonia2 port_progress.md §12.4).
+/**
+ * @brief struct stat with the bionic layout (Android ARM 32-bit, NDK android-9) -- It is NOT the one in newlib/vitasdk.
+ */
 typedef struct {
     uint64_t st_dev;         // 0
     uint8_t  __pad0[4];      // 8
@@ -883,11 +782,9 @@ int access_hook(const char* path, int amode) {
     return access(new_path, amode);
 }
 
-// Tabla de resolucion de imports. Confirmada 1:1 contra
-// `objdump -T libgameDSO.so | grep UND` (92 simbolos, ver Fase 1 del plan):
-// este motor no importa __android_log_print en este build (a diferencia de
-// Zenonia 2), asi que no se registra -- si aparece en un build futuro
-// alcanza con agregar la entrada, la funcion ya existe en main.c.
+/**
+ * @brief Error 500 (Server Error).
+ */
 so_default_dynlib default_dynlib[] = {
     // C++ ABI / GCC
     { "__cxa_atexit", (uintptr_t)&__cxa_atexit },
@@ -956,7 +853,9 @@ so_default_dynlib default_dynlib[] = {
     { "exit", (uintptr_t)&exit },
     { "raise", (uintptr_t)&raise },
 
-    // pthread (usado internamente por FalsoJNI y por el motor)
+/**
+ * @brief Import resolution table.
+ */
     { "pthread_mutex_init", (uintptr_t)&pthread_mutex_init },
     { "pthread_mutex_lock", (uintptr_t)&pthread_mutex_lock_wrapper },
     { "pthread_mutex_unlock", (uintptr_t)&pthread_mutex_unlock_wrapper },
@@ -967,7 +866,9 @@ so_default_dynlib default_dynlib[] = {
     { "pthread_getspecific", (uintptr_t)&pthread_getspecific },
     { "pthread_setspecific", (uintptr_t)&pthread_setspecific },
 
-    // OpenGL ES 1.1 (mapeado a vitaGL)
+/**
+ * @brief Import resolution table.
+ */
     { "glActiveTexture", (uintptr_t)&glActiveTexture },
     { "glBindTexture", (uintptr_t)&glBindTexture },
     { "glClear", (uintptr_t)&glClear },

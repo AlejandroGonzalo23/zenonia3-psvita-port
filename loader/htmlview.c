@@ -24,18 +24,16 @@ struct htmlview {
     float scroll_y;
 };
 
-// Copia bytes ASCII (ya garantizado por htmltext_extract) a codepoints -- el
-// font.h de este puente trabaja con arrays de uint32_t, no con UTF-8.
+/**
+ * @brief Load app0:html/<name>.
+ */
 static void ascii_to_cps(const char *s, int n, uint32_t *cps) {
     for (int i = 0; i < n; i++) cps[i] = (uint32_t)(unsigned char) s[i];
 }
 
-// Colores reales de la hoja de estilos del HTML original (about.html/
-// help_eng.html comparten el mismo <style>): .style3 (encabezado de seccion,
-// bold + regla arriba/abajo) = #00b0f0; .style2b (etiqueta, bold) = #FD9E35;
-// .style2 (cuerpo) = #ffffff (se uso blanco puro en vez de #999999 real --
-// mas legible sobre el fondo oscuro real de la Vita que sobre el gris claro
-// que asumia el CSS original).
+/**
+ * @brief Load app0:html/<name>.
+ */
 #define COLOR_BODY   0xFFFFFFFFu
 #define COLOR_HEADER 0xFF00B0F0u
 #define COLOR_LABEL  0xFFFD9E35u
@@ -50,9 +48,9 @@ static uint32_t style_color(line_style st) {
     }
 }
 
-// Rellena una franja horizontal solida y opaca (para la regla arriba/abajo de
-// un encabezado, ver htmltext.h: HTMLTEXT_STYLE_HEADER) directo en el buffer
-// ARGB premultiplicado (alpha=255 -> RGB = color tal cual, ver font.c).
+/**
+ * @brief Load app0:html/<name>.
+ */
 static void draw_hrule(uint32_t *buf, int bw, int bh, int y, float x0, float x1, uint32_t color) {
     if (y < 0 || y >= bh) return;
     int ix0 = (int) x0; if (ix0 < 0) ix0 = 0;
@@ -61,9 +59,7 @@ static void draw_hrule(uint32_t *buf, int bw, int bh, int y, float x0, float x1,
     for (int x = ix0; x < ix1; x++) buf[y * bw + x] = px;
 }
 
-// Wrapea UNA linea logica (ya sin '\n') en 1+ lineas de display usando
-// gfa_font_break_text (Paint.breakText real, ver font.h). Devuelve la
-// cantidad de lineas agregadas a out[] (hasta out_cap).
+/**< @brief Texture of ONE single line (e.). */
 static int wrap_line(const char *line, int line_len, float font_px, float max_w,
                       const char **out_ptrs, int *out_lens, int out_cap) {
     if (line_len == 0) {
@@ -81,9 +77,9 @@ static int wrap_line(const char *line, int line_len, float font_px, float max_w,
         int remaining = n - offset;
         int fit = gfa_font_break_text(font_px, cps + offset, remaining, max_w);
         if (fit <= 0) fit = 1; // una palabra mas ancha que el panel: forzar progreso
-        // No partir una palabra a la mitad si hay un espacio mas atras (busca
-        // el ultimo espacio dentro de lo que entra, salvo que sea una sola
-        // palabra larga sin espacios).
+/**
+ * @brief Draws the panel (x,y,w,h in screen space, same as androidui_draw_quad) showing the current scroll window.
+ */
         if (fit < remaining) {
             int back = fit;
             while (back > 0 && line[offset + back - 1] != ' ') back--;
@@ -105,10 +101,9 @@ static htmlview *upload_texture(uint32_t *buf, int bw, int bh, float content_h) 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, bw, bh, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // CLAMP_TO_EDGE: con GL_REPEAT (default), el filtro bilineal en los bordes
-    // del scroll (arriba/abajo del todo) mezclaria con el otro extremo de la
-    // textura (wrap-around) -- un artefacto de 1 texel visible al scrollear
-    // al limite.
+/**
+ * @brief delta_px > 0 low (shows text below).
+ */
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -129,10 +124,9 @@ htmlview *htmlview_load(const char *name, float panel_w_px, float font_px) {
         return NULL;
     }
 
-    // Igual que los PNG de androidui.c: los .html con copyright del APK
-    // original ya NO se empaquetan en el VPK -- se leen desde
-    // ux0:data/zenonia3/html/, con un fallback a app0:html/ solo por si
-    // algun build local los empaqueta igual.
+/**
+ * @brief Native size (actual texture size, in px) -- to draw a label (htmlview_make_label()) at its actual size without distortion, or to center it.
+ */
     char path[128];
     snprintf(path, sizeof(path), "ux0:data/zenonia3/html/%s.html", name);
     FILE *f = fopen(path, "rb");
@@ -157,8 +151,7 @@ htmlview *htmlview_load(const char *name, float panel_w_px, float font_px) {
 
     float max_w = panel_w_px - 2.0f * PANEL_PAD_X;
 
-    // Lineas de display: array de (puntero, largo, estilo) apuntando DENTRO
-    // de text[] -- no se copian, se leen directo al rasterizar.
+/**< @brief Display lines: array of (pointer, length, style) pointing INSIDE. */
     const char **line_ptrs = malloc(sizeof(char *) * MAX_DISPLAY_LINES);
     int *line_lens = malloc(sizeof(int) * MAX_DISPLAY_LINES);
     line_style *line_styles = malloc(sizeof(line_style) * MAX_DISPLAY_LINES);
@@ -210,8 +203,7 @@ htmlview *htmlview_load(const char *name, float panel_w_px, float font_px) {
     int y = 0;
     for (int i = 0; i < num_lines && y + line_h <= bh; i++, y += line_h) {
         if (line_styles[i] == LINE_STYLE_HEADER) {
-            // Regla horizontal real del CSS (.style3: border-top/bottom
-            // solid #00b0f0) -- una arriba y otra abajo del renglon.
+/**< @brief Actual horizontal CSS rule (.). */
             draw_hrule(buf, bw, bh, y + 1, 0.0f, (float) bw, COLOR_HEADER);
             draw_hrule(buf, bw, bh, y + line_h - 2, 0.0f, (float) bw, COLOR_HEADER);
         }
@@ -276,10 +268,7 @@ void htmlview_draw(htmlview *v, float x, float y, float w, float h) {
     glBindTexture(GL_TEXTURE_2D, v->tex);
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
-    // gfa_font_draw_line() escribe alpha PREMULTIPLICADO en RGB (ver font.c) --
-    // blendear con GL_ONE (no GL_SRC_ALPHA) para no aplicar el alpha 2 veces
-    // sobre los bordes antialiaseados. Restaurado por el caller (androidui.c)
-    // despues de esta llamada.
+/**< @brief gfa_font_draw_line() writes alpha PREMULTIPLIED in RGB (see font.). */
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
     const float verts[] = { x, y,  x + w, y,  x, y + h,  x + w, y + h };

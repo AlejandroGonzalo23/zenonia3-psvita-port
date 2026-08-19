@@ -8,9 +8,9 @@ static int append_char(char *out, int *len, int cap, char c) {
     return 1;
 }
 
-// Busqueda de substring acotada (memmem no es portable/esta en newlib de
-// vitasdk) -- usada solo para buscar "style3"/"style2b" dentro del texto de
-// un tag <td ...> ya delimitado por su propio '>'.
+/**
+ * @brief Plain text extractor for the 2 real HTML of the original APK that Android displayed in a WebView (about.html/help_eng.html, see).
+ */
 static int memmem_style(const char *hay, int hay_len, const char *needle) {
     int needle_len = (int) strlen(needle);
     for (int i = 0; i + needle_len <= hay_len; i++) {
@@ -42,7 +42,7 @@ int htmltext_extract(const char *html, char *out, int out_cap) {
                 p = close ? close + 9 : end;
                 continue;
             }
-            // Tags que cierran una linea logica (fin de celda/fila/parrafo).
+/**< @brief Writes to out (ALWAYS NUL-terminated inside out_cap), truncating if not in. */
             if (!strncmp(p, "</td>", 5) || !strncmp(p, "</tr>", 5) ||
                 !strncmp(p, "</p>", 4) || !strncmp(p, "<br", 3)) {
                 if (line_has_content) {
@@ -50,11 +50,7 @@ int htmltext_extract(const char *html, char *out, int out_cap) {
                     line_has_content = 0;
                 }
             }
-            // <td class="style3"/"style2b">: encabezado de seccion / etiqueta
-            // (ver htmltext.h) -- marcar el INICIO de esta linea antes de
-            // procesar su contenido. Solo tiene sentido al arrancar una linea
-            // nueva (si ya hay contenido, este <td> es de OTRA fila y ya se
-            // habria cerrado con </td>/</tr> arriba).
+/**< @brief Writes to out (ALWAYS NUL-terminated inside out_cap), truncating if not in. */
             if (!line_has_content && !strncmp(p, "<td", 3)) {
                 const char *tag_end = p;
                 while (*tag_end && *tag_end != '>') tag_end++;
@@ -67,7 +63,9 @@ int htmltext_extract(const char *html, char *out, int out_cap) {
                     }
                 }
             }
-            // Saltear el tag hasta su '>' de cierre.
+            /**
+             * @brief Skip the tag to its closing '>'.
+             */
             p++;
             while (*p && *p != '>') p++;
             if (*p == '>') p++;
@@ -88,8 +86,9 @@ int htmltext_extract(const char *html, char *out, int out_cap) {
 
         unsigned char c = (unsigned char) *p;
         if (c >= 0x80) {
-            // Sin decoder de la codepage real (euc-kr/etc.) no hay forma
-            // confiable de mapear esto a un glifo -- se descarta.
+/**
+ * @brief Sin decoder de la codepage real (euc-kr/etc.).
+ */
             p++;
             continue;
         }
