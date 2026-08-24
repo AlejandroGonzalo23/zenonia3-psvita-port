@@ -64,18 +64,35 @@ of an `.apk` file. Make sure that your game is the correct supported version.
         [get all the required files directly from it][unpack-on-phone]
         or by using any APK extractor you can find on Google Play.
 
-- Open the `.apk` with any zip explorer (like [7-Zip](https://www.7-zip.org/))
-and extract all folders from the `.apk` into `ux0:data/zenonia3` on your Vita.
-Example of correct resulting path: `ux0:data/zenonia3/lib/armeabi/libzenonia3.so`
-
-- The menu/title art (`res/drawable/`) and the ABOUT/HELP text (`assets/html/`)
-are read from external storage instead of being bundled in the VPK, so copy
-those two folders over too, **renaming them** to match what the loader
-expects:
-    - `res/drawable/` → `ux0:data/zenonia3/drawable/`
-    - `assets/html/` → `ux0:data/zenonia3/html/`
+- Open the `.apk` with any zip explorer (like [7-Zip](https://www.7-zip.org/)) and copy/extract the required files and folders into `ux0:data/zenonia3/` on your Vita:
+    - Extract `lib/armeabi/libgameDSO.so` directly to `ux0:data/zenonia3/libgameDSO.so`
+    - Extract the `assets/` folder to `ux0:data/zenonia3/assets/`
+    - Extract `res/drawable/` to `ux0:data/zenonia3/drawable/`
+    - Extract `assets/html/` to `ux0:data/zenonia3/html/`
+    - Extract audio files to `ux0:data/zenonia3/sound/`
 
 - Install `Zenonia3.vpk` (from [Releases][latest-release]).
+
+### Data Directory Structure (`ux0:data/zenonia3/`)
+
+Once set up and run on the console, the file structure in `ux0:data/zenonia3/` will look like this (as seen in VitaShell):
+
+```text
+ux0:data/zenonia3/
+├── assets/          # Game assets and data (extracted from APK assets/)
+├── drawable/        # UI images and drawables (extracted from APK res/drawable/)
+├── html/            # Help / About HTML pages (extracted from APK assets/html/)
+├── logs/            # Debug logs created at runtime (log_<timestamp>.txt)
+├── sound/           # Game audio, sound effects, and music
+├── libgameDSO.so    # Original ARMv6 native binary (from APK lib/armeabi/libgameDSO.so)
+├── option.sav       # (Runtime) Game configuration and options save
+├── Save0.dat        # (Runtime) Player save file
+├── _uiButton_0      # (Runtime) Touch/UI layout cache
+├── _uiButton_1      # (Runtime) Touch/UI layout cache
+├── _uiButton_2      # (Runtime) Touch/UI layout cache
+├── _uiButton_3      # (Runtime) Touch/UI layout cache
+└── _uiDpad          # (Runtime) Virtual D-pad layout cache
+```
 
 
 Controls
