@@ -65,6 +65,21 @@ void game_log(const char *fmt, ...) {
     }
 }
 
+void fatal_error(const char *fmt, ...) {
+    va_list list;
+    char string[512];
+
+    va_start(list, fmt);
+    vsnprintf(string, sizeof(string), fmt, list);
+    va_end(list);
+
+    game_log("[FATAL] %s\n", string);
+    psvDebugScreenInit();
+    printf("[FATAL] %s\n", string);
+    sceKernelDelayThread(10 * 1000 * 1000);
+    sceKernelExitProcess(0);
+}
+
 so_module zenonia3_mod;
 
 int __android_log_print(int prio, const char *tag, const char *fmt, ...) {
@@ -253,7 +268,7 @@ int main() {
 
     game_log("Llamando JNI_OnLoad...\n");
     if (Game_JNI_OnLoad) {
-        Game_JNI_OnLoad(jvm, NULL);
+        Game_JNI_OnLoad((void *)jvm, NULL);
     }
 
     game_log("Simbolos: Render=%p Resize=%p Resume=%p CletEvent=%p\n",
@@ -279,16 +294,15 @@ int main() {
         sceCtrlPeekBufferPositive(0, &pad, 1);
         sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
 
-        // Diferir el arranque del motor al primer fotograma renderizado
         if (!engine_started) {
             engine_started = 1;
             if (NativeResize) {
                 game_log("Ejecutando primer NativeResize(%d,%d)...\n", SCREEN_W, SCREEN_H);
-                NativeResize(jni, NULL, SCREEN_W, SCREEN_H);
+                NativeResize((void *)jni, NULL, SCREEN_W, SCREEN_H);
             }
             if (NativeResumeClet) {
                 game_log("Ejecutando primer NativeResumeClet...\n");
-                NativeResumeClet(jni, NULL);
+                NativeResumeClet((void *)jni, NULL);
             }
         }
 
@@ -415,10 +429,10 @@ int main() {
         if (handleCletEvent && eq_head != eq_tail) {
             input_event *ev = &event_queue[eq_head];
             eq_head = (eq_head + 1) % 16;
-            handleCletEvent(jni, NULL, ev->type, ev->p1, ev->p2, ev->p3);
+            handleCletEvent((void *)jni, NULL, ev->type, ev->p1, ev->p2, ev->p3);
         }
 
-        if (NativeRender) NativeRender(jni, NULL);
+        if (NativeRender) NativeRender((void *)jni, NULL);
 
         if (g_ui_status >= 0 && g_ui_status <= 1) splash_draw();
 
