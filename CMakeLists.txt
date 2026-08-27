@@ -15,13 +15,9 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 ## Configuracion de la app
 set(VITA_APP_NAME "Zenonia 3")
-## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
-## @note See `docs/CMakeLists.md:18` for detailed design rationale.
 set(VITA_TITLEID  "PSVZ00003")
 set(VITA_VERSION  "01.00")
 
-## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
-## @note See `docs/CMakeLists.md:23` for detailed design rationale.
 option(ENABLE_VERBOSE_JNI_LOG "Log every FalsoJNI call (debug only, slow)" OFF)
 if (ENABLE_VERBOSE_JNI_LOG)
   add_definitions(-DFALSOJNI_DEBUGLEVEL=0)
@@ -29,15 +25,11 @@ else()
   add_definitions(-DFALSOJNI_DEBUGLEVEL=2)
 endif()
 
-## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
-## @note See `docs/CMakeLists.md:32` for detailed design rationale.
 option(HIDE_VIRTUAL_GAMEPAD "Hide the game's on-screen D-pad + action button cluster (Dpad.pzx/illusiaDpad.pzx); physical Vita buttons are already mapped" ON)
 if (HIDE_VIRTUAL_GAMEPAD)
   add_definitions(-DZENONIA_HIDE_DPAD_UI=1)
 endif()
 
-## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
-## @note See `docs/CMakeLists.md:39` for detailed design rationale.
 set(RGB565_CONVERT_MODE "NATIVE" CACHE STRING "RGB565->RGBA8888 conversion strategy: SCALAR, LUT, NEON o NATIVE (perf A/B test)")
 set_property(CACHE RGB565_CONVERT_MODE PROPERTY STRINGS SCALAR LUT NEON NATIVE)
 if (RGB565_CONVERT_MODE STREQUAL "SCALAR")
@@ -52,15 +44,11 @@ else()
   message(FATAL_ERROR "RGB565_CONVERT_MODE debe ser SCALAR, LUT, NEON o NATIVE (valor recibido: ${RGB565_CONVERT_MODE})")
 endif()
 
-## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
-## @note See `docs/CMakeLists.md:55` for detailed design rationale.
 option(OPTIMIZE_NEON_FIXED "Use NEON SIMD instead of scalar division for GL_FIXED (Q16.16) vertex/color/texcoord conversion (perf A/B test)" OFF)
 if (OPTIMIZE_NEON_FIXED)
   add_definitions(-DOPTIMIZE_NEON_FIXED=1)
 endif()
 
-## @brief Esto incluye el toolchain de Vita, debe ir antes de project().
-## @note See `docs/CMakeLists.md:62` for detailed design rationale.
 option(LOCK_FPS_30 "Cap framerate at a stable 30fps (2 vblanks) instead of vitaGL's default single-vblank vsync -- fixes the ~40-60fps jitter seen with RGB565_CONVERT_MODE=NATIVE" ON)
 if (LOCK_FPS_30)
   add_definitions(-DLOCK_FPS_30=1)
@@ -68,8 +56,6 @@ endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-## @brief Prueba A/B de rendimiento (ver CLAUDE.
-## @note See `docs/CMakeLists.md:71` for detailed design rationale.
 set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d PARENTAL_LEVEL=1 -d ATTRIBUTE2=12")
 
 include_directories(
@@ -95,6 +81,7 @@ add_executable(${PROJECT_NAME}
   ./lib/falso_jni/FalsoJNI.c
   ./lib/falso_jni/FalsoJNI_ImplBridge.c
   ./lib/falso_jni/FalsoJNI_Logger.c
+  ./lib/falso_jni/ConvertUTF.c
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -102,8 +89,6 @@ target_link_libraries(${PROJECT_NAME}
   vitashark
   mathneon
   m
-## @brief Intrinsics NEON (vld1q_s32/vcvtq_f32_s32/vmulq_f32) en vez del loop escalar para la conversion GL_FIXED (Q16.
-## @note See `docs/CMakeLists.md:105` for detailed design rationale.
   vorbisidec
   ogg
   -Wl,--whole-archive pthread -Wl,--no-whole-archive
@@ -123,6 +108,7 @@ target_link_libraries(${PROJECT_NAME}
   SceKernelDmacMgr_stub
   taihen_stub
   kubridge_stub
+  stdc++
 )
 
 ## Crear archivos de Vita
@@ -135,9 +121,5 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   FILE sce_sys/livearea/contents/bg0.png sce_sys/livearea/contents/bg0.png
   FILE sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
   FILE sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml
-## @brief Decodificador OGG Vorbis (Tremor, punto fijo) para loader/audio.
-## @note See `docs/CMakeLists.md:138` for detailed design rationale.
   FILE font.ttf font.ttf
-## @brief Decodificador OGG Vorbis (Tremor, punto fijo) para loader/audio.
-## @note See `docs/CMakeLists.md:141` for detailed design rationale.
 )
