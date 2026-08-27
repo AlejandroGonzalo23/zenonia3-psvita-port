@@ -1,13 +1,12 @@
 /**
  * @file java.c
- * @brief JNI callbacks and FalsoJNI hooks for Zenonia 3.
+ * @brief Standalone JNI environment and callbacks for Zenonia 3.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <math.h>
 
 #include <falso_jni/FalsoJNI.h>
 #include "so_util.h"
@@ -190,13 +189,70 @@ static void JNICALL Zenonia_ReleaseFloatArrayElements(JNIEnv *env, jfloatArray a
     (void)env; (void)array; (void)elems; (void)mode;
 }
 
+/* --- Stubs de la interfaz JNIEnv para la JVM --- */
+
+static jclass JNICALL Zenonia_FindClass(JNIEnv *env, const char *name) {
+    (void)env; (void)name;
+    return (jclass)0x1;
+}
+
+static jmethodID JNICALL Zenonia_GetMethodID(JNIEnv *env, jclass clazz, const char *name, const char *sig) {
+    (void)env; (void)clazz; (void)name; (void)sig;
+    return (jmethodID)0x1;
+}
+
+static jmethodID JNICALL Zenonia_GetStaticMethodID(JNIEnv *env, jclass clazz, const char *name, const char *sig) {
+    (void)env; (void)clazz; (void)name; (void)sig;
+    return (jmethodID)0x1;
+}
+
+static jstring JNICALL Zenonia_NewStringUTF(JNIEnv *env, const char *bytes) {
+    (void)env;
+    return (jstring)bytes;
+}
+
+static const char* JNICALL Zenonia_GetStringUTFChars(JNIEnv *env, jstring string, jboolean *isCopy) {
+    (void)env;
+    if (isCopy) *isCopy = JNI_FALSE;
+    return (const char *)string;
+}
+
+static void JNICALL Zenonia_ReleaseStringUTFChars(JNIEnv *env, jstring string, const char *utf) {
+    (void)env; (void)string; (void)utf;
+}
+
+static jint JNICALL Zenonia_GetEnv(JavaVM *vm, void **env, jint version) {
+    (void)vm; (void)version;
+    *env = &jni;
+    return JNI_OK;
+}
+
+static struct JNINativeInterface_ zenonia_jni_native_interface = {
+    .FindClass = Zenonia_FindClass,
+    .GetMethodID = Zenonia_GetMethodID,
+    .GetStaticMethodID = Zenonia_GetStaticMethodID,
+    .NewStringUTF = Zenonia_NewStringUTF,
+    .GetStringUTFChars = Zenonia_GetStringUTFChars,
+    .ReleaseStringUTFChars = Zenonia_ReleaseStringUTFChars,
+    .GetArrayLength = Zenonia_GetArrayLength,
+    .GetByteArrayElements = Zenonia_GetByteArrayElements,
+    .ReleaseByteArrayElements = Zenonia_ReleaseByteArrayElements,
+    .GetFloatArrayElements = Zenonia_GetFloatArrayElements,
+    .ReleaseFloatArrayElements = Zenonia_ReleaseFloatArrayElements,
+    .RegisterNatives = Zenonia_RegisterNatives,
+};
+
+static struct JNIInvokeInterface_ zenonia_jvm_interface = {
+    .GetEnv = Zenonia_GetEnv,
+};
+
+const struct JNINativeInterface_ *jni = &zenonia_jni_native_interface;
+const struct JNIInvokeInterface_ *jvm = &zenonia_jvm_interface;
+
 void zenonia_install_array_hooks(void) {
-    struct JNINativeInterface *table = (struct JNINativeInterface *)jni;
-    table->GetArrayLength = Zenonia_GetArrayLength;
-    table->GetByteArrayElements = Zenonia_GetByteArrayElements;
-    table->ReleaseByteArrayElements = Zenonia_ReleaseByteArrayElements;
-    table->GetFloatArrayElements = Zenonia_GetFloatArrayElements;
-    table->ReleaseFloatArrayElements = Zenonia_ReleaseFloatArrayElements;
-    table->RegisterNatives = Zenonia_RegisterNatives;
-    game_log("[JNI] Hooks instalados en la tabla JNIEnv\n");
+    game_log("[JNI] Entorno JNI configurado\n");
+}
+
+void jni_init(void) {
+    game_log("[JNI] Inicializado entorno JNI personalizado.\n");
 }
