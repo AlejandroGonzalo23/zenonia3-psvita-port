@@ -28,8 +28,6 @@ int kuKernelCpuUnrestrictedMemcpy(void *dst, const void *src, SceSize size);
 #define printf psvDebugScreenPrintf
 #define LOG_DIR "ux0:data/zenonia3/logs"
 
-#define GAME_W 800
-#define GAME_H 480
 #define SCREEN_W 960
 #define SCREEN_H 544
 
@@ -65,21 +63,6 @@ void game_log(const char *fmt, ...) {
         fprintf(log_file, "%s", string);
         fflush(log_file);
     }
-}
-
-void fatal_error(const char *fmt, ...) {
-    va_list list;
-    char string[512];
-
-    va_start(list, fmt);
-    vsnprintf(string, sizeof(string), fmt, list);
-    va_end(list);
-
-    game_log("[FATAL] %s\n", string);
-    psvDebugScreenInit();
-    printf("[FATAL] %s\n", string);
-    sceKernelDelayThread(10 * 1000 * 1000);
-    sceKernelExitProcess(0);
 }
 
 so_module zenonia3_mod;
@@ -134,11 +117,6 @@ static input_event event_queue[16];
 static int eq_head = 0, eq_tail = 0;
 
 static void queue_input_event(int type, int p1, int p2, int p3) {
-    static int in_log = 0;
-    if (in_log < 40) {
-        game_log("[INPUT] event type=%d p1=%d p2=%d p3=%d\n", type, p1, p2, p3);
-        in_log++;
-    }
     int next = (eq_tail + 1) % 16;
     if (next != eq_head) {
         event_queue[eq_tail].type = type;
@@ -264,7 +242,6 @@ int main() {
     androidui_load(SCREEN_W, SCREEN_H);
 
     jni_init();
-    zenonia_install_array_hooks();
 
     Game_JNI_OnLoad = (void *)so_symbol(&zenonia3_mod, "JNI_OnLoad");
     NativeRender = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeRender");
@@ -282,17 +259,6 @@ int main() {
     game_log("Simbolos: Render=%p Resize=%p Resume=%p CletEvent=%p\n",
         (void*)NativeRender, (void*)NativeResize, (void*)NativeResumeClet, (void*)handleCletEvent);
 
-    // En Zenonia 3 (Nexus2) ResumeClet arranca el engine antes del primer resize
-    if (NativeResumeClet) {
-        game_log("Llamando NativeResumeClet...\n");
-        NativeResumeClet(jni, NULL);
-    }
-
-    if (NativeResize) {
-        game_log("Llamando NativeResize(%d,%d)...\n", SCREEN_W, SCREEN_H);
-        NativeResize(jni, NULL, SCREEN_W, SCREEN_H);
-    }
-
     game_log("Iniciando Bucle Principal...\n");
 
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
@@ -304,6 +270,7 @@ int main() {
     int last_tx = 0, last_ty = 0;
     unsigned int old_buttons = 0;
     int frame = 0;
+    int engine_started = 0;
 
     int fps_count = 0;
     SceUInt64 fps_window_start = sceKernelGetProcessTimeWide();
@@ -311,6 +278,19 @@ int main() {
     while (1) {
         sceCtrlPeekBufferPositive(0, &pad, 1);
         sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
+
+        // Diferir el arranque del motor al primer fotograma renderizado
+        if (!engine_started) {
+            engine_started = 1;
+            if (NativeResize) {
+                game_log("Ejecutando primer NativeResize(%d,%d)...\n", SCREEN_W, SCREEN_H);
+                NativeResize(jni, NULL, SCREEN_W, SCREEN_H);
+            }
+            if (NativeResumeClet) {
+                game_log("Ejecutando primer NativeResumeClet...\n");
+                NativeResumeClet(jni, NULL);
+            }
+        }
 
         if ((frame++ % 120) == 0) {
             game_log("frame %d alive, pad.buttons=0x%08x ui_status=%d\n", frame, (unsigned int) pad.buttons, g_ui_status);
