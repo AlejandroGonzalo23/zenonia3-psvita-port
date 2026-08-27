@@ -17,10 +17,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install build tools & vitaGL
+      - name: Install dependencies
         run: |
-          apk update && apk add --no-cache cmake make ninja gcc g++
-          vdpm https://github.com/Rinnegatamante/vitaGL
+          apt-get update
+          apt-get install -y cmake make gcc g++
+          vdpm vitaGL
+          vdpm libmathneon
+          vdpm libkstub
 
       - name: Build VPK
         run: |
@@ -35,3 +38,4 @@ jobs:
           path: |
             build/*.vpk
             build/*.bin
+            build/*.self
