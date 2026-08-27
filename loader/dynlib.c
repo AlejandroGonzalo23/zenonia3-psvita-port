@@ -99,12 +99,11 @@ static void convert_rgb565_to_rgba8888_neon(const uint16_t *src, uint8_t *dst, i
         uint16x8_t r5 = vshrq_n_u16(p, 11);
         uint16x8_t g6 = vandq_u16(vshrq_n_u16(p, 5), vdupq_n_u16(0x3F));
         uint16x8_t b5 = vandq_u16(p, vdupq_n_u16(0x1F));
-/**< @brief Wrappers for fixed point OpenGL (GLES1). */
         uint8x8_t r8 = vmovn_u16(vorrq_u16(vshlq_n_u16(r5, 3), vshrq_n_u16(r5, 2)));
         uint8x8_t g8 = vmovn_u16(vorrq_u16(vshlq_n_u16(g6, 2), vshrq_n_u16(g6, 4)));
         uint8x8_t b8 = vmovn_u16(vorrq_u16(vshlq_n_u16(b5, 3), vshrq_n_u16(b5, 2)));
         uint8x8x4_t out = {{ r8, g8, b8, vdup_n_u8(255) }};
-        vst4_u8(dst + i * 4, out); // interleaved R,G,B,A -- mismo layout que dst[i*4+0..3]
+        vst4_u8(dst + i * 4, out);
     }
     for (; i < npix; i++) {
         uint16_t p = src[i];
@@ -128,7 +127,6 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     uint16_t *src = (uint16_t *)pixels;
     int npix = width * height;
     if (npix * 4 > conv_buf_cap) {
-/**< @brief Conversion buffer reused between calls. */
         uint8_t *new_buf = (uint8_t *)realloc(conv_buf, npix * 4);
         if (!new_buf) {
             game_log("[GL] convert_rgb565_to_rgba8888: realloc fallo para %d bytes\n", npix * 4);
@@ -140,7 +138,6 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     uint8_t *dst = conv_buf;
 
 #if defined(RGB565_MODE_LUT)
-/**< @brief Conversion buffer reused between calls. */
     static uint8_t r5_to_8[32], g6_to_8[64], b5_to_8[32];
     static int lut_ready = 0;
     if (!lut_ready) {
@@ -158,13 +155,13 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     }
 #elif defined(RGB565_MODE_NEON)
     convert_rgb565_to_rgba8888_neon(src, dst, npix);
-#else // RGB565_MODE_SCALAR (default/baseline)
+#else // RGB565_MODE_SCALAR
     for (int i = 0; i < npix; i++) {
         uint16_t p = src[i];
-        dst[i*4 + 0] = ((p >> 11) & 0x1F) * 255 / 31; // R
-        dst[i*4 + 1] = ((p >> 5) & 0x3F) * 255 / 63;  // G
-        dst[i*4 + 2] = (p & 0x1F) * 255 / 31;         // B
-        dst[i*4 + 3] = 255;                           // A
+        dst[i*4 + 0] = ((p >> 11) & 0x1F) * 255 / 31;
+        dst[i*4 + 1] = ((p >> 5) & 0x3F) * 255 / 63;
+        dst[i*4 + 2] = (p & 0x1F) * 255 / 31;
+        dst[i*4 + 3] = 255;
     }
 #endif
 
@@ -209,9 +206,6 @@ void glTexImage2D_wrapper(GLenum target, GLint level, GLint internalformat, GLsi
         glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
     }
 
-/**
- * @brief Force min/mag filters so that the texture is not treated as incomplete due to lack of mipmaps.
- */
     glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -246,9 +240,6 @@ void glTexSubImage2D_wrapper(GLenum target, GLint level, GLint xoffset, GLint yo
     if (err != GL_NO_ERROR) game_log("[GL] glTexSubImage2D ERROR: %x\n", err);
 }
 
-/**
- * @brief Force min/mag filters so that the texture is not treated as incomplete due to lack of mipmaps.
- */
 static const int32_t *pending_fixed_verts = NULL;
 static GLint pending_fixed_size = 0;
 static GLsizei pending_fixed_stride = 0;
@@ -268,9 +259,6 @@ static GLfloat *fixed_texcoord_buf = NULL;
 static int fixed_texcoord_buf_cap = 0;
 
 #ifdef OPTIMIZE_NEON_FIXED
-/**
- * @brief A/B test against the scalar loop (see CLAUDE.md / CMakeLists.txt: OPTIMIZE_NEON_FIXED). Only valid when the array is tightly-packed.
- */
 static void fixed_to_float_neon(const int32_t *src, GLfloat *dst, int total_elems) {
     int i = 0;
     float32x4_t scale = vdupq_n_f32(1.0f / 65536.0f);
@@ -296,9 +284,6 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
         int needed_verts = first + count;
         int needed_floats = needed_verts * pending_fixed_size;
         if (needed_floats > fixed_vert_buf_cap) {
-/**
- * @brief A/B test against the scalar loop (see CLAUDE.md / CMakeLists.txt: OPTIMIZE_NEON_FIXED). Only valid when the array is tightly-packed.
- */
             GLfloat *new_buf = (GLfloat *)realloc(fixed_vert_buf, needed_floats * sizeof(GLfloat));
             if (!new_buf) {
                 game_log("[GL] glDrawArrays: realloc de fixed_vert_buf fallo (%d floats)\n", needed_floats);
@@ -388,9 +373,6 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
     glDrawArrays(mode, first, count);
 }
 
-/**
- * @brief No log limit so far.
- */
 void glTexEnvf_wrapper(GLenum target, GLenum pname, GLfloat param) {
     static int log = 0;
     if (log < 10) {
@@ -400,9 +382,6 @@ void glTexEnvf_wrapper(GLenum target, GLenum pname, GLfloat param) {
     glTexEnvf(target, pname, param);
 }
 
-/**
- * @brief Without wrapper until now (went directly to vitaGL).
- */
 void glBlendFunc_wrapper(GLenum sfactor, GLenum dfactor) {
     if (zenonia_verbose_ui()) {
         game_log("[GL] glBlendFunc sfactor=%x dfactor=%x ui_status=%d\n", sfactor, dfactor, g_ui_status);
@@ -468,9 +447,6 @@ void glColorPointer_wrapper(GLint size, GLenum type, GLsizei stride, const void 
     }
     glEnableClientState(GL_COLOR_ARRAY);
     static int log_colors = 0;
-/**
- * @brief struct stat with the bionic layout (Android ARM 32-bit, NDK android-9) -- It is NOT the one in newlib/vitasdk.
- */
     if (pointer && (log_colors < 20 || zenonia_verbose_ui())) {
         if (type == GL_FIXED) {
             int32_t *c = (int32_t *)pointer;
@@ -564,8 +540,6 @@ void glLoadIdentity_wrapper() {
     glLoadIdentity();
 }
 
-
-
 void glViewport_wrapper(GLint x, GLint y, GLsizei width, GLsizei height) {
     static int log = 0;
     if (log < 10) {
@@ -575,9 +549,6 @@ void glViewport_wrapper(GLint x, GLint y, GLsizei width, GLsizei height) {
     glViewport(0, 0, 960, 544);
 }
 
-/**
- * @brief Deliberate pass-through.
- */
 void glOrthof_wrapper(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat zNear, GLfloat zFar) {
     static int log = 0;
     if (log < 10) {
@@ -593,12 +564,32 @@ void glOrthox_wrapper(GLint left, GLint right, GLint bottom, GLint top, GLint zN
         game_log("[GL] glOrthox left=%d right=%d bottom=%d top=%d\n", left, right, bottom, top);
         log++;
     }
-/**
- * @brief Convert from fixed point (Q16.16) to float.
- */
     glOrthof_wrapper(left / 65536.0f, right / 65536.0f, bottom / 65536.0f, top / 65536.0f, zNear / 65536.0f, zFar / 65536.0f);
 }
 
+// Helpers de memoria ARM EABI y Bionic libc
+void *__aeabi_memset_impl(void *dest, size_t n, int c) {
+    return memset(dest, c, n);
+}
+void *__aeabi_memclr_impl(void *dest, size_t n) {
+    return memset(dest, 0, n);
+}
+void *__aeabi_memcpy_impl(void *dest, const void *src, size_t n) {
+    return memcpy(dest, src, n);
+}
+void *__aeabi_memmove_impl(void *dest, const void *src, size_t n) {
+    return memmove(dest, src, n);
+}
+void __cxa_pure_virtual(void) {}
+int __android_log_print_dummy(int prio, const char *tag, const char *fmt, ...) { 
+    (void)prio; (void)tag; (void)fmt; 
+    return 0; 
+}
+static int fake_sF[3];
+int dladdr_fake(const void *addr, void *info) { 
+    (void)addr; (void)info; 
+    return 0; 
+}
 
 // Stubs de C++/GCC
 void __cxa_begin_cleanup() {}
@@ -609,9 +600,6 @@ void __cxa_type_match() {}
 void __gnu_Unwind_Find_exidx() {}
 void __stack_chk_fail() {}
 
-/**
- * @brief Registering C++ static destructors (normally called dlclose()/exit() from a real dynamic library).
- */
 int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle) {
     (void) func; (void) arg; (void) dso_handle;
     return 0;
@@ -624,9 +612,6 @@ int __aeabi_atexit(void *arg, void (*func)(void *), void *dso_handle) {
 }
 int __stack_chk_guard = 0;
 
-/**
- * @brief pthread_mutex_t/pthread_cond_t in VitaSDK are actually POINERS (typedef struct pthread_mutex_t_ * pthread_mutex_t;) to a structure internal.
- */
 int pthread_mutex_lock_wrapper(pthread_mutex_t *mutex) {
     if (mutex && (*mutex == NULL || (intptr_t)*mutex == 0x4000)) {
         *mutex = NULL;
@@ -642,7 +627,7 @@ int pthread_mutex_unlock_wrapper(pthread_mutex_t *mutex) {
     return pthread_mutex_unlock(mutex);
 }
 int pthread_mutex_destroy_wrapper(pthread_mutex_t *mutex) {
-    if (!mutex || *mutex == NULL || (intptr_t)*mutex == 0x4000) return 0; // nunca se inicializo, nada que destruir
+    if (!mutex || *mutex == NULL || (intptr_t)*mutex == 0x4000) return 0;
     return pthread_mutex_destroy(mutex);
 }
 int pthread_cond_wait_wrapper(pthread_cond_t *cond, pthread_mutex_t *mutex) {
@@ -683,9 +668,6 @@ void* realloc_wrapper(void* ptr, size_t size) {
 
 void translate_path(const char* in_path, char* out_path, size_t out_size) {
     if (strncmp(in_path, "ux0:", 4) == 0) {
-/**
- * @brief strncpy no garantiza terminador si in_path >= out_size (256, ver).
- */
         snprintf(out_path, out_size, "%s", in_path);
         return;
     }
@@ -699,9 +681,6 @@ void translate_path(const char* in_path, char* out_path, size_t out_size) {
     snprintf(out_path, out_size, "ux0:data/zenonia3/assets/%s", relative);
 }
 
-/**
- * @brief strncpy does not guarantee terminator if in_path >= out_size (256, see fopen_hook/stat_hook/access_hook).
- */
 FILE* fopen_hook(const char* path, const char* mode) {
     char new_path[256];
     translate_path(path, new_path, sizeof(new_path));
@@ -713,30 +692,27 @@ FILE* fopen_hook(const char* path, const char* mode) {
     return fopen(new_path, mode);
 }
 
-/**
- * @brief struct stat with the bionic layout (Android ARM 32-bit, NDK android-9) -- It is NOT the one in newlib/vitasdk.
- */
 typedef struct {
-    uint64_t st_dev;         // 0
-    uint8_t  __pad0[4];      // 8
-    uint32_t __st_ino;       // 12
-    uint32_t st_mode;        // 16  <- leido por el motor
-    uint32_t st_nlink;       // 20
-    uint32_t st_uid;         // 24
-    uint32_t st_gid;         // 28
-    uint64_t st_rdev;        // 32
-    uint8_t  __pad3[4];      // 40 (+4 de alineacion implicita)
-    int64_t  st_size;        // 48  <- leido por el motor
-    uint32_t st_blksize;     // 56 (+4 de alineacion implicita)
-    uint64_t st_blocks;      // 64
-    uint32_t st_atime;       // 72
-    uint32_t st_atime_nsec;  // 76
-    uint32_t st_mtime;       // 80
-    uint32_t st_mtime_nsec;  // 84
-    uint32_t st_ctime;       // 88
-    uint32_t st_ctime_nsec;  // 92
-    uint64_t st_ino;         // 96
-} bionic_stat_t;             // 104 bytes (el motor reserva espacio de sobra)
+    uint64_t st_dev;
+    uint8_t  __pad0[4];
+    uint32_t __st_ino;
+    uint32_t st_mode;
+    uint32_t st_nlink;
+    uint32_t st_uid;
+    uint32_t st_gid;
+    uint64_t st_rdev;
+    uint8_t  __pad3[4];
+    int64_t  st_size;
+    uint32_t st_blksize;
+    uint64_t st_blocks;
+    uint32_t st_atime;
+    uint32_t st_atime_nsec;
+    uint32_t st_mtime;
+    uint32_t st_mtime_nsec;
+    uint32_t st_ctime;
+    uint32_t st_ctime_nsec;
+    uint64_t st_ino;
+} bionic_stat_t;
 
 _Static_assert(__builtin_offsetof(bionic_stat_t, st_mode) == 16, "bionic st_mode");
 _Static_assert(__builtin_offsetof(bionic_stat_t, st_size) == 48, "bionic st_size");
@@ -755,7 +731,7 @@ int stat_hook(const char* path, void* statbuf) {
     if (res == 0 && statbuf) {
         bionic_stat_t *bst = (bionic_stat_t *) statbuf;
         memset(bst, 0, sizeof(*bst));
-        bst->st_mode = st.st_mode; // los bits S_IFDIR/permisos son POSIX, coinciden
+        bst->st_mode = st.st_mode;
         bst->st_nlink = st.st_nlink;
         bst->st_uid = st.st_uid;
         bst->st_gid = st.st_gid;
@@ -782,10 +758,21 @@ int access_hook(const char* path, int amode) {
     return access(new_path, amode);
 }
 
-/**
- * @brief Error 500 (Server Error).
- */
 so_default_dynlib default_dynlib[] = {
+    // ARM EABI helpers
+    { "__aeabi_memset", (uintptr_t)&__aeabi_memset_impl },
+    { "__aeabi_memclr", (uintptr_t)&__aeabi_memclr_impl },
+    { "__aeabi_memclr4", (uintptr_t)&__aeabi_memclr_impl },
+    { "__aeabi_memcpy", (uintptr_t)&__aeabi_memcpy_impl },
+    { "__aeabi_memcpy4", (uintptr_t)&__aeabi_memcpy_impl },
+    { "__aeabi_memmove", (uintptr_t)&__aeabi_memmove_impl },
+    { "__cxa_pure_virtual", (uintptr_t)&__cxa_pure_virtual },
+
+    // Bionic & Android
+    { "__android_log_print", (uintptr_t)&__android_log_print_dummy },
+    { "__sF", (uintptr_t)&fake_sF },
+    { "dladdr", (uintptr_t)&dladdr_fake },
+
     // C++ ABI / GCC
     { "__cxa_atexit", (uintptr_t)&__cxa_atexit },
     { "__cxa_finalize", (uintptr_t)&__cxa_finalize },
@@ -827,6 +814,10 @@ so_default_dynlib default_dynlib[] = {
     { "fclose", (uintptr_t)&fclose },
     { "fseek", (uintptr_t)&fseek },
     { "ftell", (uintptr_t)&ftell },
+    { "feof", (uintptr_t)&feof },
+    { "fprintf", (uintptr_t)&fprintf },
+    { "fflush", (uintptr_t)&fflush },
+    { "snprintf", (uintptr_t)&snprintf },
     { "printf", (uintptr_t)&printf },
     { "vprintf", (uintptr_t)&vprintf },
     { "vsprintf", (uintptr_t)&vsprintf },
@@ -845,6 +836,7 @@ so_default_dynlib default_dynlib[] = {
 
     // Libc - Tiempo y matematica
     { "time", (uintptr_t)&time },
+    { "gmtime", (uintptr_t)&gmtime },
     { "gettimeofday", (uintptr_t)&gettimeofday },
     { "localtime", (uintptr_t)&localtime },
     { "ceil", (uintptr_t)&ceil },
@@ -853,9 +845,7 @@ so_default_dynlib default_dynlib[] = {
     { "exit", (uintptr_t)&exit },
     { "raise", (uintptr_t)&raise },
 
-/**
- * @brief Import resolution table.
- */
+    // Pthreads
     { "pthread_mutex_init", (uintptr_t)&pthread_mutex_init },
     { "pthread_mutex_lock", (uintptr_t)&pthread_mutex_lock_wrapper },
     { "pthread_mutex_unlock", (uintptr_t)&pthread_mutex_unlock_wrapper },
@@ -866,16 +856,14 @@ so_default_dynlib default_dynlib[] = {
     { "pthread_getspecific", (uintptr_t)&pthread_getspecific },
     { "pthread_setspecific", (uintptr_t)&pthread_setspecific },
 
-/**
- * @brief Import resolution table.
- */
+    // OpenGL / vitaGL
     { "glActiveTexture", (uintptr_t)&glActiveTexture },
     { "glBindTexture", (uintptr_t)&glBindTexture },
     { "glClear", (uintptr_t)&glClear },
     { "glClearColorx", (uintptr_t)&glClearColorx_wrapper },
     { "glColorPointer", (uintptr_t)&glColorPointer_wrapper },
     { "glColor4f", (uintptr_t)&glColor4f },
-    { "glColor4x", (uintptr_t)&glClearColorx_wrapper }, /* using same logic as glClearColorx for now */
+    { "glColor4x", (uintptr_t)&glClearColorx_wrapper },
     { "glDisable", (uintptr_t)&glDisable_wrapper },
     { "glDisableClientState", (uintptr_t)&glDisableClientState_wrapper },
     { "glDrawArrays", (uintptr_t)&glDrawArrays_wrapper },
@@ -903,6 +891,8 @@ so_default_dynlib default_dynlib[] = {
     { "connect", (uintptr_t)&connect },
     { "send", (uintptr_t)&send },
     { "recv", (uintptr_t)&recv },
+    { "sendto", (uintptr_t)&sendto },
+    { "recvfrom", (uintptr_t)&recvfrom },
     { "shutdown", (uintptr_t)&shutdown },
     { "inet_addr", (uintptr_t)&inet_addr },
 
