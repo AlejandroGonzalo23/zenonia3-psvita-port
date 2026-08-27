@@ -13,9 +13,6 @@
 
 extern void game_log(const char *fmt, ...);
 
-// Punteros a las funciones del motor libgameDSO.so (definidos en main.c)
-extern void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h);
-extern void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h);
 extern void (* NativeRender)(void *env, void *obj);
 extern void (* NativeResize)(void *env, void *obj, int w, int h);
 extern void (* NativeResumeClet)(void *env, void *obj);
@@ -51,32 +48,6 @@ static JavaDynArray *gfa_persistent_floats(JavaDynArray **slot, int len) {
         *slot = jda_alloc(len, FIELD_TYPE_FLOAT);
     }
     return *slot;
-}
-
-/* --- Intercepcion de RegisterNatives durante JNI_OnLoad --- */
-
-static jint JNICALL Zenonia_RegisterNatives(JNIEnv *env, jclass clazz, const JNINativeMethod *methods, jint nMethods) {
-    (void)env;
-    (void)clazz;
-    game_log("[JNI] RegisterNatives llamado con %d metodos\n", nMethods);
-    for (int i = 0; i < nMethods; i++) {
-        game_log("[JNI] Metodo: %s (sig: %s) -> %p\n", methods[i].name, methods[i].signature, methods[i].fnPtr);
-
-        if (strstr(methods[i].name, "InitDeviceInfo") || strstr(methods[i].name, "initDeviceInfo")) {
-            NativeInitDeviceInfo = methods[i].fnPtr;
-        } else if (strstr(methods[i].name, "InitWithBufferSize") || strstr(methods[i].name, "initWithBufferSize")) {
-            NativeInitWithBufferSize = methods[i].fnPtr;
-        } else if (strstr(methods[i].name, "Render") || strcmp(methods[i].name, "render") == 0) {
-            NativeRender = methods[i].fnPtr;
-        } else if (strstr(methods[i].name, "Resize") || strcmp(methods[i].name, "resize") == 0) {
-            NativeResize = methods[i].fnPtr;
-        } else if (strstr(methods[i].name, "ResumeClet") || strcmp(methods[i].name, "resumeClet") == 0) {
-            NativeResumeClet = methods[i].fnPtr;
-        } else if (strstr(methods[i].name, "handleCletEvent")) {
-            handleCletEvent = methods[i].fnPtr;
-        }
-    }
-    return JNI_OK;
 }
 
 /* --- Callbacks llamados por libgameDSO hacia Java --- */
@@ -189,8 +160,6 @@ static void JNICALL Zenonia_ReleaseFloatArrayElements(JNIEnv *env, jfloatArray a
     (void)env; (void)array; (void)elems; (void)mode;
 }
 
-/* --- Stubs de la interfaz JNIEnv para la JVM --- */
-
 static jclass JNICALL Zenonia_FindClass(JNIEnv *env, const char *name) {
     (void)env; (void)name;
     return (jclass)0x1;
@@ -219,6 +188,11 @@ static const char* JNICALL Zenonia_GetStringUTFChars(JNIEnv *env, jstring string
 
 static void JNICALL Zenonia_ReleaseStringUTFChars(JNIEnv *env, jstring string, const char *utf) {
     (void)env; (void)string; (void)utf;
+}
+
+static jint JNICALL Zenonia_RegisterNatives(JNIEnv *env, jclass clazz, const JNINativeMethod *methods, jint nMethods) {
+    (void)env; (void)clazz; (void)methods; (void)nMethods;
+    return JNI_OK;
 }
 
 static jint JNICALL Zenonia_GetEnv(JavaVM *vm, void **env, jint version) {
@@ -251,10 +225,5 @@ static struct JNIInvokeInterface zenonia_jvm_interface = {
 JNIEnv jni = &zenonia_jni_native_interface;
 JavaVM jvm = &zenonia_jvm_interface;
 
-void zenonia_install_array_hooks(void) {
-    game_log("[JNI] Entorno JNI configurado\n");
-}
-
-void jni_init(void) {
-    game_log("[JNI] Inicializado entorno JNI personalizado.\n");
-}
+void zenonia_install_array_hooks(void) {}
+void jni_init(void) {}
