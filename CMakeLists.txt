@@ -16,13 +16,7 @@ set(VITA_APP_NAME "Zenonia 3")
 set(VITA_TITLEID  "PSVZ00003")
 set(VITA_VERSION  "01.00")
 
-option(ENABLE_VERBOSE_JNI_LOG "Log every FalsoJNI call (debug only, slow)" OFF)
-if (ENABLE_VERBOSE_JNI_LOG)
-  add_definitions(-DFALSOJNI_DEBUGLEVEL=0)
-else()
-  add_definitions(-DFALSOJNI_DEBUGLEVEL=2)
-endif()
-
+option(ENABLE_VERBOSE_JNI_LOG "Log every JNI call" OFF)
 option(HIDE_VIRTUAL_GAMEPAD "Hide on-screen controls" ON)
 if (HIDE_VIRTUAL_GAMEPAD)
   add_definitions(-DZENONIA_HIDE_DPAD_UI=1)
@@ -75,12 +69,7 @@ add_executable(${PROJECT_NAME}
   ./loader/htmlview.c
   ./loader/androidui.c
   ./common/debugScreen.c
-  ./lib/falso_jni/FalsoJNI.c
-  ./lib/falso_jni/FalsoJNI_Logger.c
-  ./lib/falso_jni/ConvertUTF.c
 )
-
-set_source_files_properties(./lib/falso_jni/ConvertUTF.c PROPERTIES COMPILE_FLAGS "-fgnu89-inline")
 
 target_link_libraries(${PROJECT_NAME}
   vitaGL
