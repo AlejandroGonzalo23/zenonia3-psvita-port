@@ -34,6 +34,7 @@ typedef struct {
 
 static JavaDynArray *jda_alloc(int length, int type) {
     JavaDynArray *jda = malloc(sizeof(JavaDynArray));
+    if (!jda) return NULL;
     jda->length = length;
     jda->type = type;
     size_t sz = sizeof(int);
@@ -121,13 +122,15 @@ jbyteArray Java_com_gamevil_nexus2_Natives_readAssets(JNIEnv *env, jobject obj, 
     fseek(f, 0, SEEK_SET);
 
     JavaDynArray *arr = jda_alloc(sz, FIELD_TYPE_BYTE);
-    fread(arr->elements, 1, sz, f);
+    if (arr && arr->elements) {
+        fread(arr->elements, 1, sz, f);
+    }
     fclose(f);
 
     return (jbyteArray)arr;
 }
 
-/* --- Hooks de gestión de Arrays en la tabla JNIEnv --- */
+/* --- Hooks de gestión de Arrays en JNIEnv --- */
 
 static jsize JNICALL Zenonia_GetArrayLength(JNIEnv *env, jarray array) {
     (void)env;
@@ -160,18 +163,23 @@ static void JNICALL Zenonia_ReleaseFloatArrayElements(JNIEnv *env, jfloatArray a
     (void)env; (void)array; (void)elems; (void)mode;
 }
 
+/* --- Stubs JNIEnv --- */
+
 static jclass JNICALL Zenonia_FindClass(JNIEnv *env, const char *name) {
-    (void)env; (void)name;
+    (void)env;
+    game_log("[JNI] FindClass: %s\n", name ? name : "(null)");
     return (jclass)0x1;
 }
 
 static jmethodID JNICALL Zenonia_GetMethodID(JNIEnv *env, jclass clazz, const char *name, const char *sig) {
-    (void)env; (void)clazz; (void)name; (void)sig;
+    (void)env; (void)clazz;
+    game_log("[JNI] GetMethodID: %s (sig: %s)\n", name ? name : "(null)", sig ? sig : "(null)");
     return (jmethodID)0x1;
 }
 
 static jmethodID JNICALL Zenonia_GetStaticMethodID(JNIEnv *env, jclass clazz, const char *name, const char *sig) {
-    (void)env; (void)clazz; (void)name; (void)sig;
+    (void)env; (void)clazz;
+    game_log("[JNI] GetStaticMethodID: %s (sig: %s)\n", name ? name : "(null)", sig ? sig : "(null)");
     return (jmethodID)0x1;
 }
 
@@ -191,14 +199,19 @@ static void JNICALL Zenonia_ReleaseStringUTFChars(JNIEnv *env, jstring string, c
 }
 
 static jint JNICALL Zenonia_RegisterNatives(JNIEnv *env, jclass clazz, const JNINativeMethod *methods, jint nMethods) {
-    (void)env; (void)clazz; (void)methods; (void)nMethods;
-    return JNI_OK;
-}
-
-static jint JNICALL Zenonia_GetEnv(JavaVM *vm, void **env, jint version) {
-    (void)vm; (void)version;
-    if (env) {
-        *env = (void *)jni;
+    (void)env; (void)clazz;
+    game_log("[JNI] RegisterNatives invocado con %d metodos\n", nMethods);
+    for (int i = 0; i < nMethods; i++) {
+        game_log("[JNI] Registrando: %s -> %p\n", methods[i].name, methods[i].fnPtr);
+        if (strstr(methods[i].name, "Render") || strcmp(methods[i].name, "render") == 0) {
+            NativeRender = methods[i].fnPtr;
+        } else if (strstr(methods[i].name, "Resize") || strcmp(methods[i].name, "resize") == 0) {
+            NativeResize = methods[i].fnPtr;
+        } else if (strstr(methods[i].name, "ResumeClet") || strcmp(methods[i].name, "resumeClet") == 0) {
+            NativeResumeClet = methods[i].fnPtr;
+        } else if (strstr(methods[i].name, "handleCletEvent")) {
+            handleCletEvent = methods[i].fnPtr;
+        }
     }
     return JNI_OK;
 }
@@ -218,12 +231,25 @@ static struct JNINativeInterface zenonia_jni_native_interface = {
     .RegisterNatives = Zenonia_RegisterNatives,
 };
 
+static const struct JNINativeInterface *zenonia_jni_ptr = &zenonia_jni_native_interface;
+JNIEnv jni = (JNIEnv)&zenonia_jni_ptr;
+
+static jint JNICALL Zenonia_GetEnv(JavaVM *vm, void **env, jint version) {
+    (void)vm; (void)version;
+    if (env) {
+        *env = (void *)jni;
+    }
+    return JNI_OK;
+}
+
 static struct JNIInvokeInterface zenonia_jvm_interface = {
     .GetEnv = Zenonia_GetEnv,
 };
 
-JNIEnv jni = &zenonia_jni_native_interface;
-JavaVM jvm = &zenonia_jvm_interface;
+static const struct JNIInvokeInterface *zenonia_jvm_ptr = &zenonia_jvm_interface;
+JavaVM jvm = (JavaVM)&zenonia_jvm_ptr;
 
 void zenonia_install_array_hooks(void) {}
-void jni_init(void) {}
+void jni_init(void) {
+    game_log("[JNI] Tablas JNI con doble indireccion inicializadas.\n");
+}
