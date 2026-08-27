@@ -15,17 +15,17 @@
 
 extern void game_log(const char *fmt, ...);
 
-// Punteros a las funciones nativas registradas dinámicamente por libgameDSO.so
-extern void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h);
-extern void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h);
-extern void (* NativeRender)(void *env, void *obj);
-extern void (* NativeResize)(void *env, void *obj, int w, int h);
-extern void (* NativeResumeClet)(void *env, void *obj);
-extern void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3);
+// Punteros a las funciones nativas registradas dinamicamente por libgameDSO.so
+void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h) = NULL;
+void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h) = NULL;
+void (* NativeRender)(void *env, void *obj) = NULL;
+void (* NativeResize)(void *env, void *obj, int w, int h) = NULL;
+void (* NativeResumeClet)(void *env, void *obj) = NULL;
+void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3) = NULL;
 
 volatile int g_ui_status = 0;
 
-/* --- Definición del array dinámico auxiliar --- */
+/* --- Definicion del array dinamico auxiliar --- */
 
 #define FIELD_TYPE_FLOAT 1
 #define FIELD_TYPE_BYTE  2
@@ -58,7 +58,7 @@ static JavaDynArray *gfa_persistent_floats(JavaDynArray **slot, int len) {
     return *slot;
 }
 
-/* --- Intercepción de RegisterNatives --- */
+/* --- Intercepcion de RegisterNatives --- */
 
 static jint JNICALL Zenonia_RegisterNatives(JNIEnv *env, jclass clazz, const JNINativeMethod *methods, jint nMethods) {
     (void)env;
@@ -124,7 +124,7 @@ static jboolean Zenonia_isNetworkConnected(jmethodID id, va_list args) {
     return JNI_FALSE;
 }
 
-// Interfaz gráfica y fuentes (GFA)
+// Interfaz grafica y fuentes (GFA)
 static JavaDynArray *g_font_measure_slot = NULL;
 static JavaDynArray *g_font_draw_slot = NULL;
 
@@ -169,34 +169,7 @@ static jbyteArray Zenonia_readAssets(jmethodID id, va_list args) {
     return (jbyteArray)arr;
 }
 
-/* --- Tabla de Métodos JNI y Clases FalsoJNI --- */
-
-static NamelessMethod nexusMethods[] = {
-    { 1, "showTitleComponent", METHOD_TYPE_VOID, (void *)Zenonia_showTitleComponent },
-    { 2, "showReplyMoveComponent", METHOD_TYPE_VOID, (void *)Zenonia_showReplyMoveComponent },
-    { 3, "vibrate", METHOD_TYPE_VOID, (void *)Zenonia_vibrate },
-    { 4, "playBGM", METHOD_TYPE_VOID, (void *)Zenonia_playBGM },
-    { 5, "stopBGM", METHOD_TYPE_VOID, (void *)Zenonia_stopBGM },
-    { 6, "playSE", METHOD_TYPE_VOID, (void *)Zenonia_playSE },
-    { 7, "isNetworkConnected", METHOD_TYPE_BOOLEAN, (void *)Zenonia_isNetworkConnected },
-    { 8, "readAssets", METHOD_TYPE_OBJECT, (void *)Zenonia_readAssets },
-    { 9, "GFA_DrawFont", METHOD_TYPE_OBJECT, (void *)Zenonia_GFA_DrawFont },
-    { 10, "GFA_DrawText", METHOD_TYPE_OBJECT, (void *)Zenonia_GFA_DrawText },
-    { 11, "GFA_MeasureText", METHOD_TYPE_OBJECT, (void *)Zenonia_GFA_MeasureText },
-    { 0, NULL, 0, NULL }
-};
-
-static NamelessField nexusFields[] = {
-    { 0, NULL, 0 }
-};
-
-static NamelessClass registeredClasses[] = {
-    { 1, "com/gamevil/nexus2/Natives", nexusMethods, nexusFields },
-    { 2, "com/gamevil/zenonia3/global/Zenonia3", nexusMethods, nexusFields },
-    { 0, NULL, NULL, NULL }
-};
-
-/* --- Hooks de gestión de Arrays en JNIEnv --- */
+/* --- Hooks de gestion de Arrays en JNIEnv --- */
 
 static jsize JNICALL Zenonia_GetArrayLength(JNIEnv *env, jarray array) {
     (void)env;
@@ -236,24 +209,42 @@ static void JNICALL Zenonia_ReleaseFloatArrayElements(JNIEnv *env, jfloatArray a
 }
 
 void zenonia_install_array_hooks(void) {
-    jni.GetArrayLength = Zenonia_GetArrayLength;
-    jni.GetByteArrayElements = Zenonia_GetByteArrayElements;
-    jni.ReleaseByteArrayElements = Zenonia_ReleaseByteArrayElements;
-    jni.GetFloatArrayElements = Zenonia_GetFloatArrayElements;
-    jni.ReleaseFloatArrayElements = Zenonia_ReleaseFloatArrayElements;
-    jni.RegisterNatives = Zenonia_RegisterNatives;
-    game_log("[JNI] Hooks de arrays y RegisterNatives instalados en JNIEnv\n");
+    jni->GetArrayLength = Zenonia_GetArrayLength;
+    jni->GetByteArrayElements = Zenonia_GetByteArrayElements;
+    jni->ReleaseByteArrayElements = Zenonia_ReleaseByteArrayElements;
+    jni->GetFloatArrayElements = Zenonia_GetFloatArrayElements;
+    jni->ReleaseFloatArrayElements = Zenonia_ReleaseFloatArrayElements;
+    jni->RegisterNatives = Zenonia_RegisterNatives;
+    game_log("[JNI] Hooks instalados en JNIEnv\n");
 }
 
 void jni_init(void) {
-    FalsoJNI_LoggerSetName("Zenonia3");
-    
-    // Asignar el hook de RegisterNatives antes de inicializar la JVM
-    jni.RegisterNatives = Zenonia_RegisterNatives;
-    
-    for (int i = 0; registeredClasses[i].name != NULL; i++) {
-        falsoJNI_registerClass(registeredClasses[i].name, registeredClasses[i].methods, registeredClasses[i].fields);
-    }
-    
+    // Registrar metodos puente con la API estandar de FalsoJNI
+    nameToMethod_t nexusMethods[] = {
+        { "showTitleComponent", (void *)Zenonia_showTitleComponent },
+        { "showReplyMoveComponent", (void *)Zenonia_showReplyMoveComponent },
+        { "vibrate", (void *)Zenonia_vibrate },
+        { "playBGM", (void *)Zenonia_playBGM },
+        { "stopBGM", (void *)Zenonia_stopBGM },
+        { "playSE", (void *)Zenonia_playSE },
+        { "isNetworkConnected", (void *)Zenonia_isNetworkConnected },
+        { "readAssets", (void *)Zenonia_readAssets },
+        { "GFA_DrawFont", (void *)Zenonia_GFA_DrawFont },
+        { "GFA_DrawText", (void *)Zenonia_GFA_DrawText },
+        { "GFA_MeasureText", (void *)Zenonia_GFA_MeasureText },
+        { NULL, NULL }
+    };
+
+    nameToField_t nexusFields[] = {
+        { NULL, 0, NULL }
+    };
+
+    // Reemplaza puntero RegisterNatives
+    jni->RegisterNatives = Zenonia_RegisterNatives;
+
+    // Registra clases para resolucion JNI
+    falsoJNI_registerClass("com/gamevil/nexus2/Natives", nexusMethods, nexusFields);
+    falsoJNI_registerClass("com/gamevil/zenonia3/global/Zenonia3", nexusMethods, nexusFields);
+
     game_log("[JNI] FalsoJNI inicializado correctamente.\n");
 }
