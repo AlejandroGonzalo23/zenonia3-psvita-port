@@ -22,7 +22,7 @@ jobs:
       - name: Checkout FalsoJNI
         uses: actions/checkout@v4
         with:
-          repository: falsojni/FalsoJNI
+          repository: Rinnegatamante/FalsoJNI
           path: lib/falso_jni
 
       - name: Build VPK
