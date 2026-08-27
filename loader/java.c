@@ -223,11 +223,11 @@ static void JNICALL Zenonia_ReleaseStringUTFChars(JNIEnv *env, jstring string, c
 
 static jint JNICALL Zenonia_GetEnv(JavaVM *vm, void **env, jint version) {
     (void)vm; (void)version;
-    *env = &jni;
+    *env = (void *)&jni;
     return JNI_OK;
 }
 
-static struct JNINativeInterface_ zenonia_jni_native_interface = {
+static struct JNINativeInterface zenonia_jni_native_interface = {
     .FindClass = Zenonia_FindClass,
     .GetMethodID = Zenonia_GetMethodID,
     .GetStaticMethodID = Zenonia_GetStaticMethodID,
@@ -242,12 +242,12 @@ static struct JNINativeInterface_ zenonia_jni_native_interface = {
     .RegisterNatives = Zenonia_RegisterNatives,
 };
 
-static struct JNIInvokeInterface_ zenonia_jvm_interface = {
+static struct JNIInvokeInterface zenonia_jvm_interface = {
     .GetEnv = Zenonia_GetEnv,
 };
 
-const struct JNINativeInterface_ *jni = &zenonia_jni_native_interface;
-const struct JNIInvokeInterface_ *jvm = &zenonia_jvm_interface;
+JNIEnv jni = &zenonia_jni_native_interface;
+JavaVM jvm = &zenonia_jvm_interface;
 
 void zenonia_install_array_hooks(void) {
     game_log("[JNI] Entorno JNI configurado\n");
