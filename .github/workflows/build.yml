@@ -16,14 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          apt-get update
-          apt-get install -y cmake make gcc g++
-          vdpm vitaGL
-          vdpm libmathneon
-          vdpm libkstub
+        with:
+          submodules: recursive
 
       - name: Build VPK
         run: |
@@ -39,3 +33,4 @@ jobs:
             build/*.vpk
             build/*.bin
             build/*.self
+            build/eboot.bin
