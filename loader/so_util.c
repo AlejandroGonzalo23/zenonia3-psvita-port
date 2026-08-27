@@ -195,7 +195,7 @@ int _so_load(so_module *mod, SceUID so_blockid, void *so_data, uintptr_t load_ad
                 if (res < 0)
                     goto err_free_so;
 
-                sceKernelGetMemBlockBase(mod->patch_blockid, &mod->patch_base);
+                sceKernelGetMemBlockBase(mod->patch_blockid, (void **)&mod->patch_base);
                 mod->patch_head = mod->patch_base;
 
                 memset(&opt, 0, sizeof(SceKernelAllocMemBlockKernelOpt));
