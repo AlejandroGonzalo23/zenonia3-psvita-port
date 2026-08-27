@@ -1,6 +1,6 @@
 /**
  * @file java.c
- * @brief FalsoJNI bindings and JNI callbacks for Zenonia 3 (Gamevil Nexus2 engine).
+ * @brief JNI callbacks and FalsoJNI hooks for Zenonia 3.
  */
 
 #include <stdio.h>
@@ -10,12 +10,11 @@
 #include <math.h>
 
 #include <falso_jni/FalsoJNI.h>
-#include <falso_jni/FalsoJNI_Logger.h>
 #include "so_util.h"
 
 extern void game_log(const char *fmt, ...);
 
-// Punteros a las funciones nativas registradas dinamicamente por libgameDSO.so
+// Punteros a las funciones del motor libgameDSO.so
 void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h) = NULL;
 void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h) = NULL;
 void (* NativeRender)(void *env, void *obj) = NULL;
@@ -25,7 +24,7 @@ void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3)
 
 volatile int g_ui_status = 0;
 
-/* --- Definicion del array dinamico auxiliar --- */
+/* --- Arrays dinamicos persistentes --- */
 
 #define FIELD_TYPE_FLOAT 1
 #define FIELD_TYPE_BYTE  2
@@ -48,9 +47,6 @@ static JavaDynArray *jda_alloc(int length, int type) {
     return jda;
 }
 
-/**
- * @brief Obtiene o crea un array persistente de floats para evitar allocs en cada frame.
- */
 static JavaDynArray *gfa_persistent_floats(JavaDynArray **slot, int len) {
     if (!*slot) {
         *slot = jda_alloc(len, FIELD_TYPE_FLOAT);
@@ -58,103 +54,95 @@ static JavaDynArray *gfa_persistent_floats(JavaDynArray **slot, int len) {
     return *slot;
 }
 
-/* --- Intercepcion de RegisterNatives --- */
+/* --- Intercepcion de RegisterNatives durante JNI_OnLoad --- */
 
 static jint JNICALL Zenonia_RegisterNatives(JNIEnv *env, jclass clazz, const JNINativeMethod *methods, jint nMethods) {
     (void)env;
     (void)clazz;
     game_log("[JNI] RegisterNatives llamado con %d metodos\n", nMethods);
     for (int i = 0; i < nMethods; i++) {
-        game_log("[JNI] Registrando: %s (sig: %s) -> %p\n", methods[i].name, methods[i].signature, methods[i].fnPtr);
+        game_log("[JNI] Metodo: %s (sig: %s) -> %p\n", methods[i].name, methods[i].signature, methods[i].fnPtr);
 
-        if (strcmp(methods[i].name, "NativeInitDeviceInfo") == 0 || strcmp(methods[i].name, "initDeviceInfo") == 0) {
+        if (strstr(methods[i].name, "InitDeviceInfo") || strstr(methods[i].name, "initDeviceInfo")) {
             NativeInitDeviceInfo = methods[i].fnPtr;
-        } else if (strcmp(methods[i].name, "NativeInitWithBufferSize") == 0 || strcmp(methods[i].name, "initWithBufferSize") == 0) {
+        } else if (strstr(methods[i].name, "InitWithBufferSize") || strstr(methods[i].name, "initWithBufferSize")) {
             NativeInitWithBufferSize = methods[i].fnPtr;
-        } else if (strcmp(methods[i].name, "NativeRender") == 0 || strcmp(methods[i].name, "render") == 0) {
+        } else if (strstr(methods[i].name, "Render") || strcmp(methods[i].name, "render") == 0) {
             NativeRender = methods[i].fnPtr;
-        } else if (strcmp(methods[i].name, "NativeResize") == 0 || strcmp(methods[i].name, "resize") == 0) {
+        } else if (strstr(methods[i].name, "Resize") || strcmp(methods[i].name, "resize") == 0) {
             NativeResize = methods[i].fnPtr;
-        } else if (strcmp(methods[i].name, "NativeResumeClet") == 0 || strcmp(methods[i].name, "resumeClet") == 0) {
+        } else if (strstr(methods[i].name, "ResumeClet") || strcmp(methods[i].name, "resumeClet") == 0) {
             NativeResumeClet = methods[i].fnPtr;
-        } else if (strcmp(methods[i].name, "handleCletEvent") == 0) {
+        } else if (strstr(methods[i].name, "handleCletEvent")) {
             handleCletEvent = methods[i].fnPtr;
         }
     }
     return JNI_OK;
 }
 
-/* --- Callbacks para clases Java de Nexus2 / Zenonia 3 --- */
+/* --- Callbacks llamados por libgameDSO hacia Java --- */
 
-// com/gamevil/nexus2/Natives
-static void Zenonia_showTitleComponent(jmethodID id, va_list args) {
-    int status = va_arg(args, int);
+void Java_com_gamevil_nexus2_Natives_showTitleComponent(JNIEnv *env, jobject obj, jint status) {
+    (void)env; (void)obj;
     game_log("[JNI] showTitleComponent status=%d\n", status);
     g_ui_status = status;
 }
 
-static void Zenonia_showReplyMoveComponent(jmethodID id, va_list args) {
-    int status = va_arg(args, int);
+void Java_com_gamevil_nexus2_Natives_showReplyMoveComponent(JNIEnv *env, jobject obj, jint status) {
+    (void)env; (void)obj;
     game_log("[JNI] showReplyMoveComponent status=%d\n", status);
     g_ui_status = status;
 }
 
-static void Zenonia_vibrate(jmethodID id, va_list args) {
-    int ms = va_arg(args, int);
-    (void)ms;
+void Java_com_gamevil_nexus2_Natives_vibrate(JNIEnv *env, jobject obj, jint ms) {
+    (void)env; (void)obj; (void)ms;
 }
 
-static void Zenonia_playBGM(jmethodID id, va_list args) {
-    const char *path = va_arg(args, const char *);
-    game_log("[JNI] playBGM: %s\n", path ? path : "(null)");
+void Java_com_gamevil_nexus2_Natives_playBGM(JNIEnv *env, jobject obj, jstring path) {
+    (void)env; (void)obj; (void)path;
 }
 
-static void Zenonia_stopBGM(jmethodID id, va_list args) {
-    (void)args;
-    game_log("[JNI] stopBGM\n");
+void Java_com_gamevil_nexus2_Natives_stopBGM(JNIEnv *env, jobject obj) {
+    (void)env; (void)obj;
 }
 
-static void Zenonia_playSE(jmethodID id, va_list args) {
-    int sound_id = va_arg(args, int);
-    (void)sound_id;
+void Java_com_gamevil_nexus2_Natives_playSE(JNIEnv *env, jobject obj, jint sound_id) {
+    (void)env; (void)obj; (void)sound_id;
 }
 
-static jboolean Zenonia_isNetworkConnected(jmethodID id, va_list args) {
-    (void)args;
+jboolean Java_com_gamevil_nexus2_Natives_isNetworkConnected(JNIEnv *env, jobject obj) {
+    (void)env; (void)obj;
     return JNI_FALSE;
 }
 
-// Interfaz grafica y fuentes (GFA)
 static JavaDynArray *g_font_measure_slot = NULL;
 static JavaDynArray *g_font_draw_slot = NULL;
 
-static jobject Zenonia_GFA_DrawFont(jmethodID id, va_list args) {
-    (void)id;
-    (void)args;
+jobject Java_com_gamevil_nexus2_Natives_GFA_1DrawFont(JNIEnv *env, jobject obj) {
+    (void)env; (void)obj;
     return (jobject)gfa_persistent_floats(&g_font_draw_slot, 4);
 }
 
-static jobject Zenonia_GFA_DrawText(jmethodID id, va_list args) {
-    (void)id;
-    (void)args;
+jobject Java_com_gamevil_nexus2_Natives_GFA_1DrawText(JNIEnv *env, jobject obj) {
+    (void)env; (void)obj;
     return (jobject)gfa_persistent_floats(&g_font_draw_slot, 4);
 }
 
-static jobject Zenonia_GFA_MeasureText(jmethodID id, va_list args) {
-    (void)id;
-    (void)args;
+jobject Java_com_gamevil_nexus2_Natives_GFA_1MeasureText(JNIEnv *env, jobject obj) {
+    (void)env; (void)obj;
     return (jobject)gfa_persistent_floats(&g_font_measure_slot, 2);
 }
 
-static jbyteArray Zenonia_readAssets(jmethodID id, va_list args) {
-    const char *path = va_arg(args, const char *);
-    if (!path) return NULL;
+jbyteArray Java_com_gamevil_nexus2_Natives_readAssets(JNIEnv *env, jobject obj, jstring path_str) {
+    (void)env; (void)obj;
+    if (!path_str) return NULL;
 
+    const char *path = (const char *)path_str;
     char full_path[256];
     snprintf(full_path, sizeof(full_path), "ux0:data/zenonia3/assets/%s", path);
     FILE *f = fopen(full_path, "rb");
     if (!f) {
-        game_log("[JNI] Assets no encontrado: %s\n", full_path);
+        game_log("[JNI] readAssets no encontrado: %s\n", full_path);
         return NULL;
     }
 
@@ -169,7 +157,7 @@ static jbyteArray Zenonia_readAssets(jmethodID id, va_list args) {
     return (jbyteArray)arr;
 }
 
-/* --- Hooks de gestion de Arrays en JNIEnv --- */
+/* --- Hooks de gestión de Arrays en la tabla JNIEnv --- */
 
 static jsize JNICALL Zenonia_GetArrayLength(JNIEnv *env, jarray array) {
     (void)env;
@@ -187,10 +175,7 @@ static jbyte* JNICALL Zenonia_GetByteArrayElements(JNIEnv *env, jbyteArray array
 }
 
 static void JNICALL Zenonia_ReleaseByteArrayElements(JNIEnv *env, jbyteArray array, jbyte *elems, jint mode) {
-    (void)env;
-    (void)array;
-    (void)elems;
-    (void)mode;
+    (void)env; (void)array; (void)elems; (void)mode;
 }
 
 static jfloat* JNICALL Zenonia_GetFloatArrayElements(JNIEnv *env, jfloatArray array, jboolean *isCopy) {
@@ -202,49 +187,16 @@ static jfloat* JNICALL Zenonia_GetFloatArrayElements(JNIEnv *env, jfloatArray ar
 }
 
 static void JNICALL Zenonia_ReleaseFloatArrayElements(JNIEnv *env, jfloatArray array, jfloat *elems, jint mode) {
-    (void)env;
-    (void)array;
-    (void)elems;
-    (void)mode;
+    (void)env; (void)array; (void)elems; (void)mode;
 }
 
 void zenonia_install_array_hooks(void) {
-    jni->GetArrayLength = Zenonia_GetArrayLength;
-    jni->GetByteArrayElements = Zenonia_GetByteArrayElements;
-    jni->ReleaseByteArrayElements = Zenonia_ReleaseByteArrayElements;
-    jni->GetFloatArrayElements = Zenonia_GetFloatArrayElements;
-    jni->ReleaseFloatArrayElements = Zenonia_ReleaseFloatArrayElements;
-    jni->RegisterNatives = Zenonia_RegisterNatives;
-    game_log("[JNI] Hooks instalados en JNIEnv\n");
-}
-
-void jni_init(void) {
-    // Registrar metodos puente con la API estandar de FalsoJNI
-    nameToMethod_t nexusMethods[] = {
-        { "showTitleComponent", (void *)Zenonia_showTitleComponent },
-        { "showReplyMoveComponent", (void *)Zenonia_showReplyMoveComponent },
-        { "vibrate", (void *)Zenonia_vibrate },
-        { "playBGM", (void *)Zenonia_playBGM },
-        { "stopBGM", (void *)Zenonia_stopBGM },
-        { "playSE", (void *)Zenonia_playSE },
-        { "isNetworkConnected", (void *)Zenonia_isNetworkConnected },
-        { "readAssets", (void *)Zenonia_readAssets },
-        { "GFA_DrawFont", (void *)Zenonia_GFA_DrawFont },
-        { "GFA_DrawText", (void *)Zenonia_GFA_DrawText },
-        { "GFA_MeasureText", (void *)Zenonia_GFA_MeasureText },
-        { NULL, NULL }
-    };
-
-    nameToField_t nexusFields[] = {
-        { NULL, 0, NULL }
-    };
-
-    // Reemplaza puntero RegisterNatives
-    jni->RegisterNatives = Zenonia_RegisterNatives;
-
-    // Registra clases para resolucion JNI
-    falsoJNI_registerClass("com/gamevil/nexus2/Natives", nexusMethods, nexusFields);
-    falsoJNI_registerClass("com/gamevil/zenonia3/global/Zenonia3", nexusMethods, nexusFields);
-
-    game_log("[JNI] FalsoJNI inicializado correctamente.\n");
+    struct JNINativeInterface_ *table = (struct JNINativeInterface_ *)jni;
+    table->GetArrayLength = Zenonia_GetArrayLength;
+    table->GetByteArrayElements = Zenonia_GetByteArrayElements;
+    table->ReleaseByteArrayElements = Zenonia_ReleaseByteArrayElements;
+    table->GetFloatArrayElements = Zenonia_GetFloatArrayElements;
+    table->ReleaseFloatArrayElements = Zenonia_ReleaseFloatArrayElements;
+    table->RegisterNatives = Zenonia_RegisterNatives;
+    game_log("[JNI] Hooks instalados en la tabla JNIEnv\n");
 }
