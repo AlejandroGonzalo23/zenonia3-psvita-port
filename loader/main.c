@@ -23,15 +23,11 @@
 #include <vitaGL.h>
 #include <falso_jni/FalsoJNI.h>
 
-// Declaracion directa para evitar conflicto de tipos entre kubridge.h y taihen.h
 int kuKernelCpuUnrestrictedMemcpy(void *dst, const void *src, SceSize size);
 
 #define printf psvDebugScreenPrintf
 #define LOG_DIR "ux0:data/zenonia3/logs"
 
-/**
- * @brief LOGICAL resolution of the game: 400x240 fixed.
- */
 #define GAME_W 400
 #define GAME_H 240
 #define SCREEN_W 960
@@ -41,14 +37,11 @@ FILE *log_file = NULL;
 
 int gl_active = 0;
 
-int _newlib_heap_size_user = 128 * 1024 * 1024; // 128 MB para newlib (malloc)
-unsigned int sceLibcHeapSize = 4 * 1024 * 1024; // 4 MB para SCE Libc (system libs)
+int _newlib_heap_size_user = 128 * 1024 * 1024;
+unsigned int sceLibcHeapSize = 4 * 1024 * 1024;
 
-/**
- * @brief One log file per run, with timestamp, inside logs/.
- */
 void init_log() {
-    sceIoMkdir(LOG_DIR, 0777); // falla en silencio si ya existe
+    sceIoMkdir(LOG_DIR, 0777);
 
     char log_path[256];
     time_t t = time(NULL);
@@ -86,7 +79,7 @@ void fatal_error(const char *fmt, ...) {
     game_log("[FATAL] %s\n", string);
     psvDebugScreenInit();
     printf("[FATAL] %s\n", string);
-    sceKernelDelayThread(10 * 1000 * 1000); // 10s para poder leerlo antes de morir
+    sceKernelDelayThread(10 * 1000 * 1000);
     sceKernelExitProcess(0);
 }
 
@@ -109,12 +102,12 @@ extern so_default_dynlib default_dynlib[];
 extern int default_dynlib_size;
 
 int (* Game_JNI_OnLoad)(void *vm, void *reserved);
-void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h);
-void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h);
-void (* NativeRender)(void *env, void *obj);
-void (* NativeResize)(void *env, void *obj, int w, int h);
-void (* NativeResumeClet)(void *env, void *obj);
-void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3);
+void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h) = NULL;
+void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h) = NULL;
+void (* NativeRender)(void *env, void *obj) = NULL;
+void (* NativeResize)(void *env, void *obj, int w, int h) = NULL;
+void (* NativeResumeClet)(void *env, void *obj) = NULL;
+void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3) = NULL;
 
 #define MH_KEY_PRESSEVENT        2
 #define MH_KEY_RELEASEEVENT      3
@@ -290,53 +283,48 @@ int main() {
 
         jni_init();
         zenonia_install_array_hooks();
-        JNIEnv *jniEnv = &jni;
 
         Game_JNI_OnLoad = (void *)so_symbol(&zenonia3_mod, "JNI_OnLoad");
 
-        // Fallbacks de nombres JNI para Zenonia 3
+        // Fallback de busqueda estatica
         NativeInitDeviceInfo = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeInitDeviceInfo");
-        if (!NativeInitDeviceInfo)
-            NativeInitDeviceInfo = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_initDeviceInfo");
-
         NativeInitWithBufferSize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeInitWithBufferSize");
-        if (!NativeInitWithBufferSize)
-            NativeInitWithBufferSize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_initWithBufferSize");
-
         NativeRender = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeRender");
-        if (!NativeRender)
-            NativeRender = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_render");
-
         NativeResize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResize");
-        if (!NativeResize)
-            NativeResize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_resize");
-
         NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResumeClet");
-        if (!NativeResumeClet)
-            NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_resumeClet");
-
         handleCletEvent = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_handleCletEvent");
 
         zenonia_install_hide_dpad_hook(&zenonia3_mod);
 
-        game_log("Symbols: JNI_OnLoad=%p NativeInitDeviceInfo=%p NativeInitWithBufferSize=%p NativeRender=%p NativeResize=%p NativeResumeClet=%p handleCletEvent=%p\n",
-            (void*)Game_JNI_OnLoad, (void*)NativeInitDeviceInfo, (void*)NativeInitWithBufferSize,
+        // Llamar a JNI_OnLoad primero para que ejecute RegisterNatives
+        game_log("Llamando JNI_OnLoad...\n");
+        if (Game_JNI_OnLoad) {
+            Game_JNI_OnLoad(jvm, NULL);
+        }
+
+        game_log("Simbolos resueltos: InitDevice=%p InitBuffer=%p Render=%p Resize=%p Resume=%p CletEvent=%p\n",
+            (void*)NativeInitDeviceInfo, (void*)NativeInitWithBufferSize,
             (void*)NativeRender, (void*)NativeResize, (void*)NativeResumeClet, (void*)handleCletEvent);
 
-        game_log("Llamando JNI_OnLoad...\n");
-        if (Game_JNI_OnLoad) Game_JNI_OnLoad(&jvm, NULL);
+        if (NativeInitWithBufferSize) {
+            game_log("Llamando NativeInitWithBufferSize(%d,%d)...\n", GAME_W, GAME_H);
+            NativeInitWithBufferSize(jni, NULL, GAME_W, GAME_H);
+        }
 
-        game_log("Llamando NativeInitWithBufferSize(%d,%d)...\n", GAME_W, GAME_H);
-        if (NativeInitWithBufferSize) NativeInitWithBufferSize(jniEnv, NULL, GAME_W, GAME_H);
+        if (NativeInitDeviceInfo) {
+            game_log("Llamando NativeInitDeviceInfo(%d,%d)...\n", GAME_W, GAME_H);
+            NativeInitDeviceInfo(jni, NULL, GAME_W, GAME_H);
+        }
 
-        game_log("Llamando NativeInitDeviceInfo(%d,%d)...\n", GAME_W, GAME_H);
-        if (NativeInitDeviceInfo) NativeInitDeviceInfo(jniEnv, NULL, GAME_W, GAME_H);
+        if (NativeResize) {
+            game_log("Llamando NativeResize(%d,%d)...\n", GAME_W, GAME_H);
+            NativeResize(jni, NULL, GAME_W, GAME_H);
+        }
 
-        game_log("Llamando NativeResize(%d,%d)...\n", GAME_W, GAME_H);
-        if (NativeResize) NativeResize(jniEnv, NULL, GAME_W, GAME_H);
-
-        game_log("Llamando NativeResumeClet...\n");
-        if (NativeResumeClet) NativeResumeClet(jniEnv, NULL);
+        if (NativeResumeClet) {
+            game_log("Llamando NativeResumeClet...\n");
+            NativeResumeClet(jni, NULL);
+        }
 
         game_log("Iniciando Bucle Principal...\n");
 
@@ -481,10 +469,10 @@ int main() {
             if (handleCletEvent && eq_head != eq_tail) {
                 input_event *ev = &event_queue[eq_head];
                 eq_head = (eq_head + 1) % 16;
-                handleCletEvent(jniEnv, NULL, ev->type, ev->p1, ev->p2, ev->p3);
+                handleCletEvent(jni, NULL, ev->type, ev->p1, ev->p2, ev->p3);
             }
 
-            if (NativeRender) NativeRender(jniEnv, NULL);
+            if (NativeRender) NativeRender(jni, NULL);
 
             if (g_ui_status >= 0 && g_ui_status <= 1) splash_draw();
 
