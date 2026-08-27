@@ -14,13 +14,13 @@
 
 extern void game_log(const char *fmt, ...);
 
-// Punteros a las funciones del motor libgameDSO.so
-void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h) = NULL;
-void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h) = NULL;
-void (* NativeRender)(void *env, void *obj) = NULL;
-void (* NativeResize)(void *env, void *obj, int w, int h) = NULL;
-void (* NativeResumeClet)(void *env, void *obj) = NULL;
-void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3) = NULL;
+// Punteros a las funciones del motor libgameDSO.so (definidos en main.c)
+extern void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h);
+extern void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h);
+extern void (* NativeRender)(void *env, void *obj);
+extern void (* NativeResize)(void *env, void *obj, int w, int h);
+extern void (* NativeResumeClet)(void *env, void *obj);
+extern void (* handleCletEvent)(void *env, void *obj, int type, int p1, int p2, int p3);
 
 volatile int g_ui_status = 0;
 
