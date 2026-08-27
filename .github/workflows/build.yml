@@ -14,15 +14,16 @@ jobs:
       image: vitasdk/vitasdk:latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Zenonia 3
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Download FalsoJNI
-        run: |
-          mkdir -p lib/falso_jni
-          curl -sL https://github.com/SonicMastr/FalsoJNI/archive/refs/heads/master.tar.gz | tar -xz -C lib/falso_jni --strip-components=1
+      - name: Checkout FalsoJNI
+        uses: actions/checkout@v4
+        with:
+          repository: SonicMastr/FalsoJNI
+          path: lib/falso_jni
 
       - name: Build VPK
         run: |
