@@ -28,6 +28,8 @@ int kuKernelCpuUnrestrictedMemcpy(void *dst, const void *src, SceSize size);
 #define printf psvDebugScreenPrintf
 #define LOG_DIR "ux0:data/zenonia3/logs"
 
+#define GAME_W 800
+#define GAME_H 480
 #define SCREEN_W 960
 #define SCREEN_H 544
 
@@ -296,12 +298,13 @@ int main() {
 
         if (!engine_started) {
             engine_started = 1;
+            // Configurar viewport del motor a la resolucion nativa soportada por Nexus2 (800x480)
             if (NativeResize) {
-                game_log("Ejecutando primer NativeResize(%d,%d)...\n", SCREEN_W, SCREEN_H);
-                NativeResize((void *)jni, NULL, SCREEN_W, SCREEN_H);
+                game_log("Ejecutando NativeResize(%d,%d)...\n", GAME_W, GAME_H);
+                NativeResize((void *)jni, NULL, GAME_W, GAME_H);
             }
             if (NativeResumeClet) {
-                game_log("Ejecutando primer NativeResumeClet...\n");
+                game_log("Ejecutando NativeResumeClet...\n");
                 NativeResumeClet((void *)jni, NULL);
             }
         }
