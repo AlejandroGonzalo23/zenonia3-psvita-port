@@ -34,7 +34,7 @@ jobs:
       - name: Build VPK
         run: |
           mkdir build && cd build
-          cmake -G "Unix Makefiles" ..
+          cmake -G "Unix Makefiles" -DCMAKE_C_FLAGS="-Wno-incompatible-pointer-types -Wno-int-conversion" ..
           make
 
       - name: Upload VPK Artifact
