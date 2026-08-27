@@ -191,7 +191,7 @@ static void JNICALL Zenonia_ReleaseFloatArrayElements(JNIEnv *env, jfloatArray a
 }
 
 void zenonia_install_array_hooks(void) {
-    struct JNINativeInterface_ *table = (struct JNINativeInterface_ *)jni;
+    struct JNINativeInterface *table = (struct JNINativeInterface *)jni;
     table->GetArrayLength = Zenonia_GetArrayLength;
     table->GetByteArrayElements = Zenonia_GetByteArrayElements;
     table->ReleaseByteArrayElements = Zenonia_ReleaseByteArrayElements;
