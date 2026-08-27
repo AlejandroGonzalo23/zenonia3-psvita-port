@@ -11,6 +11,7 @@ endif()
 project(zenonia_3)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
+## Configuracion de la app
 set(VITA_APP_NAME "Zenonia 3")
 set(VITA_TITLEID  "PSVZ00003")
 set(VITA_VERSION  "01.00")
@@ -80,7 +81,6 @@ add_executable(${PROJECT_NAME}
   ./lib/falso_jni/ConvertUTF.c
 )
 
-# Forzar inclusion del helper inline en ConvertUTF.c
 set_source_files_properties(./lib/falso_jni/ConvertUTF.c PROPERTIES COMPILE_FLAGS "-fgnu89-inline")
 
 target_link_libraries(${PROJECT_NAME}
@@ -110,6 +110,7 @@ target_link_libraries(${PROJECT_NAME}
   stdc++
 )
 
+## Crear archivos de Vita
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE NOASLR)
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
@@ -119,5 +120,4 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   FILE sce_sys/livearea/contents/bg0.png sce_sys/livearea/contents/bg0.png
   FILE sce_sys/livearea/contents/startup.png sce_sys/livearea/contents/startup.png
   FILE sce_sys/livearea/contents/template.xml sce_sys/livearea/contents/template.xml
-  FILE font.ttf font.ttf
 )
