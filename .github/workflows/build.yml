@@ -25,6 +25,12 @@ jobs:
           repository: Rinnegatamante/FalsoJNI
           path: lib/falso_jni
 
+      - name: Checkout STB Libraries
+        uses: actions/checkout@v4
+        with:
+          repository: nothings/stb
+          path: lib/stb
+
       - name: Build VPK
         run: |
           mkdir build && cd build
