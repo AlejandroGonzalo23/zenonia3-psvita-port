@@ -1,5 +1,5 @@
 /**
- * @brief main.c ARMv7 Shared Libraries loader. Zenonia 3. Same engine (Gamevil Nexus2/"Clet") as Zenonia 2.
+ * @brief main.c ARMv7 Shared Libraries loader. Zenonia 3 (Gamevil Nexus2).
  */
 #include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>
@@ -28,13 +28,12 @@ int kuKernelCpuUnrestrictedMemcpy(void *dst, const void *src, SceSize size);
 #define printf psvDebugScreenPrintf
 #define LOG_DIR "ux0:data/zenonia3/logs"
 
-#define GAME_W 400
-#define GAME_H 240
+#define GAME_W 800
+#define GAME_H 480
 #define SCREEN_W 960
 #define SCREEN_H 544
 
 FILE *log_file = NULL;
-
 int gl_active = 0;
 
 int _newlib_heap_size_user = 128 * 1024 * 1024;
@@ -102,8 +101,6 @@ extern so_default_dynlib default_dynlib[];
 extern int default_dynlib_size;
 
 int (* Game_JNI_OnLoad)(void *vm, void *reserved);
-void (* NativeInitDeviceInfo)(void *env, void *obj, int w, int h) = NULL;
-void (* NativeInitWithBufferSize)(void *env, void *obj, int w, int h) = NULL;
 void (* NativeRender)(void *env, void *obj) = NULL;
 void (* NativeResize)(void *env, void *obj, int w, int h) = NULL;
 void (* NativeResumeClet)(void *env, void *obj) = NULL;
@@ -173,10 +170,7 @@ static GLuint splash_tex = 0;
 
 static void splash_load(void) {
     FILE *f = fopen("app0:splash.rgba", "rb");
-    if (!f) {
-        game_log("splash: app0:splash.rgba no encontrado (ok si todavia no se generaron los assets de LiveArea)\n");
-        return;
-    }
+    if (!f) return;
     void *data = malloc(960 * 544 * 4);
     if (!data) { fclose(f); return; }
     fread(data, 1, 960 * 544 * 4, f);
@@ -221,18 +215,9 @@ static void splash_draw(void) {
     glPopMatrix();
 }
 
-void log_active_frame_buf(const char *label) {
-    SceDisplayFrameBuf fb;
-    memset(&fb, 0, sizeof(fb));
-    fb.size = sizeof(fb);
-    int ret = sceDisplayGetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
-    game_log("[DISPLAY] %s: sceDisplayGetFrameBuf ret=0x%08x base=%p w=%d h=%d pitch=%d\n",
-             label, ret, fb.base, fb.width, fb.height, fb.pitch);
-}
-
 void gl_init() {
     vglUseTripleBuffering(GL_FALSE);
-    vglInitExtended(0, 960, 544, 6 * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
+    vglInitExtended(0, 960, 544, 16 * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
 #ifdef LOCK_FPS_30
     vglWaitVblankStart(GL_FALSE);
 #endif
@@ -255,264 +240,226 @@ int main() {
     if (res < 0) {
         game_log("Error critico cargando libgameDSO.so: 0x%08X\n", res);
         sceKernelDelayThread(5000000);
-    } else {
-        game_log("Libreria cargada con exito.\n");
-        game_log("mod: text_base=0x%08x num_dynsym=%d dynsym=%p dynstr=%p hash=%p soname=%s\n",
-            (unsigned int) zenonia3_mod.text_base, zenonia3_mod.num_dynsym,
-            (void*)zenonia3_mod.dynsym, (void*)zenonia3_mod.dynstr, (void*)zenonia3_mod.hash,
-            zenonia3_mod.soname ? zenonia3_mod.soname : "(null)");
+        return 0;
+    }
 
-        so_relocate(&zenonia3_mod);
-        so_resolve(&zenonia3_mod, default_dynlib, default_dynlib_size, 0);
+    game_log("Libreria cargada con exito.\n");
+    so_relocate(&zenonia3_mod);
+    so_resolve(&zenonia3_mod, default_dynlib, default_dynlib_size, 0);
 
-        uint32_t text_base = zenonia3_mod.text_base;
-        if (*(uint16_t *)(text_base + 0x9a7b4) == 0xdd24) {
-            uint16_t patch_beq = 0xd024;
-            kuKernelCpuUnrestrictedMemcpy((void *)(text_base + 0x9a7b4), &patch_beq, 2);
-            game_log("Parche aplicado: CMvLayerData::PreLoad (ble -> beq)\n");
-        }
-        so_flush_caches(&zenonia3_mod);
-        so_initialize(&zenonia3_mod);
+    uint32_t text_base = zenonia3_mod.text_base;
+    if (*(uint16_t *)(text_base + 0x9a7b4) == 0xdd24) {
+        uint16_t patch_beq = 0xd024;
+        kuKernelCpuUnrestrictedMemcpy((void *)(text_base + 0x9a7b4), &patch_beq, 2);
+        game_log("Parche aplicado: CMvLayerData::PreLoad (ble -> beq)\n");
+    }
+    so_flush_caches(&zenonia3_mod);
+    so_initialize(&zenonia3_mod);
 
-        game_log("SoLoader inicializado. Iniciando vitaGL...\n");
-        gl_init();
-        game_log("vitaGL inicializado.\n");
-        audio_init();
-        splash_load();
-        androidui_load(SCREEN_W, SCREEN_H);
+    game_log("SoLoader inicializado. Iniciando vitaGL...\n");
+    gl_init();
+    game_log("vitaGL inicializado.\n");
+    audio_init();
+    splash_load();
+    androidui_load(SCREEN_W, SCREEN_H);
 
-        jni_init();
-        zenonia_install_array_hooks();
+    jni_init();
+    zenonia_install_array_hooks();
 
-        Game_JNI_OnLoad = (void *)so_symbol(&zenonia3_mod, "JNI_OnLoad");
+    Game_JNI_OnLoad = (void *)so_symbol(&zenonia3_mod, "JNI_OnLoad");
+    NativeRender = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeRender");
+    NativeResize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResize");
+    NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResumeClet");
+    handleCletEvent = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_handleCletEvent");
 
-        // Resolucion con nombres directos y C++ Mangled
-        NativeInitDeviceInfo = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeInitDeviceInfo");
-        if (!NativeInitDeviceInfo)
-            NativeInitDeviceInfo = (void *)so_symbol(&zenonia3_mod, "_Z20NativeInitDeviceInfoP7_JNIEnvP8_jobjectii");
+    zenonia_install_hide_dpad_hook(&zenonia3_mod);
 
-        NativeInitWithBufferSize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeInitWithBufferSize");
-        if (!NativeInitWithBufferSize)
-            NativeInitWithBufferSize = (void *)so_symbol(&zenonia3_mod, "_Z24NativeInitWithBufferSizeP7_JNIEnvP8_jobjectii");
+    game_log("Llamando JNI_OnLoad...\n");
+    if (Game_JNI_OnLoad) {
+        Game_JNI_OnLoad(jvm, NULL);
+    }
 
-        NativeRender = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeRender");
-        if (!NativeRender)
-            NativeRender = (void *)so_symbol(&zenonia3_mod, "_Z12NativeRenderP7_JNIEnvP8_jobject");
+    game_log("Simbolos: Render=%p Resize=%p Resume=%p CletEvent=%p\n",
+        (void*)NativeRender, (void*)NativeResize, (void*)NativeResumeClet, (void*)handleCletEvent);
 
-        NativeResize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResize");
-        if (!NativeResize)
-            NativeResize = (void *)so_symbol(&zenonia3_mod, "_Z12NativeResizeP7_JNIEnvP8_jobjectii");
+    // En Zenonia 3 (Nexus2) ResumeClet arranca el engine antes del primer resize
+    if (NativeResumeClet) {
+        game_log("Llamando NativeResumeClet...\n");
+        NativeResumeClet(jni, NULL);
+    }
 
-        NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResumeClet");
-        if (!NativeResumeClet)
-            NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "_Z16NativeResumeCletP7_JNIEnvP8_jobject");
+    if (NativeResize) {
+        game_log("Llamando NativeResize(%d,%d)...\n", SCREEN_W, SCREEN_H);
+        NativeResize(jni, NULL, SCREEN_W, SCREEN_H);
+    }
 
-        handleCletEvent = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_handleCletEvent");
-        if (!handleCletEvent)
-            handleCletEvent = (void *)so_symbol(&zenonia3_mod, "_Z15handleCletEventP7_JNIEnvP8_jobjectiiii");
+    game_log("Iniciando Bucle Principal...\n");
 
-        zenonia_install_hide_dpad_hook(&zenonia3_mod);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
 
-        game_log("Llamando JNI_OnLoad...\n");
-        if (Game_JNI_OnLoad) {
-            Game_JNI_OnLoad(jvm, NULL);
-        }
+    SceCtrlData pad;
+    SceTouchData touch;
+    int last_touch = 0;
+    int last_touch_suppressed = 0;
+    int last_tx = 0, last_ty = 0;
+    unsigned int old_buttons = 0;
+    int frame = 0;
 
-        game_log("Simbolos resueltos: InitDevice=%p InitBuffer=%p Render=%p Resize=%p Resume=%p CletEvent=%p\n",
-            (void*)NativeInitDeviceInfo, (void*)NativeInitWithBufferSize,
-            (void*)NativeRender, (void*)NativeResize, (void*)NativeResumeClet, (void*)handleCletEvent);
+    int fps_count = 0;
+    SceUInt64 fps_window_start = sceKernelGetProcessTimeWide();
 
-        if (NativeInitWithBufferSize) {
-            game_log("Llamando NativeInitWithBufferSize(%d,%d)...\n", GAME_W, GAME_H);
-            NativeInitWithBufferSize(jni, NULL, GAME_W, GAME_H);
-        }
+    while (1) {
+        sceCtrlPeekBufferPositive(0, &pad, 1);
+        sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
 
-        if (NativeInitDeviceInfo) {
-            game_log("Llamando NativeInitDeviceInfo(%d,%d)...\n", GAME_W, GAME_H);
-            NativeInitDeviceInfo(jni, NULL, GAME_W, GAME_H);
-        }
-
-        if (NativeResize) {
-            game_log("Llamando NativeResize(%d,%d)...\n", GAME_W, GAME_H);
-            NativeResize(jni, NULL, GAME_W, GAME_H);
+        if ((frame++ % 120) == 0) {
+            game_log("frame %d alive, pad.buttons=0x%08x ui_status=%d\n", frame, (unsigned int) pad.buttons, g_ui_status);
         }
 
-        if (NativeResumeClet) {
-            game_log("Llamando NativeResumeClet...\n");
-            NativeResumeClet(jni, NULL);
+        if ((pad.buttons & SCE_CTRL_START) && (pad.buttons & SCE_CTRL_SELECT)) break;
+        if (g_ui_status == UI_STATUS_EXIT) break;
+
+        unsigned int pressed = pad.buttons & ~old_buttons;
+        unsigned int released = old_buttons & ~pad.buttons;
+
+        if (g_ui_status == 4 || g_ui_status == 5) {
+            if (pad.buttons & SCE_CTRL_UP)   androidui_scroll_info_text(g_ui_status, -8.0f, SCREEN_W, SCREEN_H);
+            if (pad.buttons & SCE_CTRL_DOWN) androidui_scroll_info_text(g_ui_status,  8.0f, SCREEN_W, SCREEN_H);
+            pressed  &= ~(SCE_CTRL_UP | SCE_CTRL_DOWN);
+            released &= ~(SCE_CTRL_UP | SCE_CTRL_DOWN);
         }
 
-        game_log("Iniciando Bucle Principal...\n");
+        for (int i = 0; i < BTN_MAP_COUNT; i++) {
+            if (pressed & btn_map[i].btn)
+                queue_input_event(MH_KEY_PRESSEVENT, btn_map[i].hal, 0, 0);
+            if (released & btn_map[i].btn)
+                queue_input_event(MH_KEY_RELEASEEVENT, btn_map[i].hal, 0, 0);
+        }
+        old_buttons = pad.buttons;
 
-        sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
+        if (touch.reportNum > 0) {
+            int x = touch.report[0].x * SCREEN_W / 1920;
+            int y = touch.report[0].y * SCREEN_H / 1088;
 
-        SceCtrlData pad;
-        SceTouchData touch;
-        int last_touch = 0;
-        int last_touch_suppressed = 0;
-        int last_tx = 0, last_ty = 0;
-        unsigned int old_buttons = 0;
-        int frame = 0;
+            if (!last_touch) {
+                int sx = x;
+                int sy = y;
 
-        int fps_count = 0;
-        SceUInt64 fps_window_start = sceKernelGetProcessTimeWide();
-
-        while (1) {
-            sceCtrlPeekBufferPositive(0, &pad, 1);
-            sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
-
-            if ((frame++ % 120) == 0) {
-                game_log("frame %d alive, touch.reportNum=%d pad.buttons=0x%08x ui_status=%d\n", frame, touch.reportNum, (unsigned int) pad.buttons, g_ui_status);
-            }
-
-            if ((pad.buttons & SCE_CTRL_START) && (pad.buttons & SCE_CTRL_SELECT)) break;
-
-            if (g_ui_status == UI_STATUS_EXIT) break;
-
-            unsigned int pressed = pad.buttons & ~old_buttons;
-            unsigned int released = old_buttons & ~pad.buttons;
-
-            if (g_ui_status == 4 || g_ui_status == 5) {
-                if (pad.buttons & SCE_CTRL_UP)   androidui_scroll_info_text(g_ui_status, -8.0f, SCREEN_W, SCREEN_H);
-                if (pad.buttons & SCE_CTRL_DOWN) androidui_scroll_info_text(g_ui_status,  8.0f, SCREEN_W, SCREEN_H);
-                pressed  &= ~(SCE_CTRL_UP | SCE_CTRL_DOWN);
-                released &= ~(SCE_CTRL_UP | SCE_CTRL_DOWN);
-            }
-
-            for (int i = 0; i < BTN_MAP_COUNT; i++) {
-                if (pressed & btn_map[i].btn)
-                    queue_input_event(MH_KEY_PRESSEVENT, btn_map[i].hal, 0, 0);
-                if (released & btn_map[i].btn)
-                    queue_input_event(MH_KEY_RELEASEEVENT, btn_map[i].hal, 0, 0);
-            }
-            old_buttons = pad.buttons;
-
-            if (touch.reportNum > 0) {
-                int x = touch.report[0].x * GAME_W / 1920;
-                int y = touch.report[0].y * GAME_H / 1088;
-
-                if (!last_touch) {
-                    int sx = touch.report[0].x * SCREEN_W / 1920;
-                    int sy = touch.report[0].y * SCREEN_H / 1088;
-
-                    if (g_ui_status == 1) {
+                if (g_ui_status == 1) {
+                    queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_BACK, 0, 0);
+                    queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_BACK, 0, 0);
+                    last_touch_suppressed = 1;
+                } else if (g_ui_status == 2) {
+                    androidui_menu_hit hit = androidui_menu_hit_test((float) sx, (float) sy, SCREEN_W, SCREEN_H);
+                    switch (hit) {
+                        case ANDROIDUI_MENU_HIT_COMMUNITY:
+                            queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_LEFT, 0, 0);
+                            queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_LEFT, 0, 0);
+                            last_touch_suppressed = 1;
+                            break;
+                        case ANDROIDUI_MENU_HIT_OPTIONS:
+                            queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_UP, 0, 0);
+                            queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_UP, 0, 0);
+                            last_touch_suppressed = 1;
+                            break;
+                        case ANDROIDUI_MENU_HIT_NEWGAME:
+                            queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_OK, 0, 0);
+                            queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_OK, 0, 0);
+                            last_touch_suppressed = 1;
+                            break;
+                        case ANDROIDUI_MENU_HIT_CONTINUE:
+                            queue_input_event(NEXUS_HAL_REPLY_YESNO, NEXUS_HAL_FIRST_MOVE_REPLY_PAGE, 0, 0);
+                            last_touch_suppressed = 1;
+                            break;
+                        case ANDROIDUI_MENU_HIT_HELP:
+                            queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_DOWN, 0, 0);
+                            queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_DOWN, 0, 0);
+                            last_touch_suppressed = 1;
+                            break;
+                        case ANDROIDUI_MENU_HIT_ABOUT:
+                            queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_RIGHT, 0, 0);
+                            queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_RIGHT, 0, 0);
+                            last_touch_suppressed = 1;
+                            break;
+                        default:
+                            last_touch_suppressed = 0;
+                            break;
+                    }
+                } else if (g_ui_status == 5 || g_ui_status == 4) {
+                    androidui_backbtn_hit hit = androidui_backbtn_hit_test((float) sx, (float) sy, SCREEN_W, SCREEN_H);
+                    if (hit == ANDROIDUI_BACKBTN_HIT_BACK) {
                         queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_BACK, 0, 0);
                         queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_BACK, 0, 0);
                         last_touch_suppressed = 1;
-                    } else if (g_ui_status == 2) {
-                        androidui_menu_hit hit = androidui_menu_hit_test((float) sx, (float) sy, SCREEN_W, SCREEN_H);
-                        switch (hit) {
-                            case ANDROIDUI_MENU_HIT_COMMUNITY:
-                                queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_LEFT, 0, 0);
-                                queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_LEFT, 0, 0);
-                                last_touch_suppressed = 1;
-                                break;
-                            case ANDROIDUI_MENU_HIT_OPTIONS:
-                                queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_UP, 0, 0);
-                                queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_UP, 0, 0);
-                                last_touch_suppressed = 1;
-                                break;
-                            case ANDROIDUI_MENU_HIT_NEWGAME:
-                                queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_OK, 0, 0);
-                                queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_OK, 0, 0);
-                                last_touch_suppressed = 1;
-                                break;
-                            case ANDROIDUI_MENU_HIT_CONTINUE:
-                                queue_input_event(NEXUS_HAL_REPLY_YESNO, NEXUS_HAL_FIRST_MOVE_REPLY_PAGE, 0, 0);
-                                last_touch_suppressed = 1;
-                                break;
-                            case ANDROIDUI_MENU_HIT_HELP:
-                                queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_DOWN, 0, 0);
-                                queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_DOWN, 0, 0);
-                                last_touch_suppressed = 1;
-                                break;
-                            case ANDROIDUI_MENU_HIT_ABOUT:
-                                queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_RIGHT, 0, 0);
-                                queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_RIGHT, 0, 0);
-                                last_touch_suppressed = 1;
-                                break;
-                            default:
-                                last_touch_suppressed = 0;
-                                break;
-                        }
-                    } else if (g_ui_status == 5 || g_ui_status == 4) {
-                        androidui_backbtn_hit hit = androidui_backbtn_hit_test((float) sx, (float) sy, SCREEN_W, SCREEN_H);
-                        if (hit == ANDROIDUI_BACKBTN_HIT_BACK) {
-                            queue_input_event(MH_KEY_PRESSEVENT, HAL_KEY_BACK, 0, 0);
-                            queue_input_event(MH_KEY_RELEASEEVENT, HAL_KEY_BACK, 0, 0);
-                            last_touch_suppressed = 1;
-                        } else {
-                            last_touch_suppressed = 0;
-                        }
-                    } else if (g_ui_status == 5000) {
-                        androidui_reply_hit hit = androidui_reply_hit_test((float) sx, (float) sy, SCREEN_W, SCREEN_H);
-                        switch (hit) {
-                            case ANDROIDUI_REPLY_HIT_WRITE:
-                                queue_input_event(NEXUS_HAL_REPLY_YESNO, NEXUS_HAL_YES_MOVE_REPLY_PAGE, 0, 0);
-                                last_touch_suppressed = 1;
-                                break;
-                            case ANDROIDUI_REPLY_HIT_LATER:
-                                queue_input_event(NEXUS_HAL_REPLY_YESNO, NEXUS_HAL_NO_MOVE_REPLY_PAGE, 0, 0);
-                                last_touch_suppressed = 1;
-                                break;
-                            default:
-                                last_touch_suppressed = 0;
-                                break;
-                        }
                     } else {
                         last_touch_suppressed = 0;
                     }
-
-                    if (!last_touch_suppressed) {
-                        queue_input_event(MH_POINTER_PRESSEVENT, x, y, 0);
+                } else if (g_ui_status == 5000) {
+                    androidui_reply_hit hit = androidui_reply_hit_test((float) sx, (float) sy, SCREEN_W, SCREEN_H);
+                    switch (hit) {
+                        case ANDROIDUI_REPLY_HIT_WRITE:
+                            queue_input_event(NEXUS_HAL_REPLY_YESNO, NEXUS_HAL_YES_MOVE_REPLY_PAGE, 0, 0);
+                            last_touch_suppressed = 1;
+                            break;
+                        case ANDROIDUI_REPLY_HIT_LATER:
+                            queue_input_event(NEXUS_HAL_REPLY_YESNO, NEXUS_HAL_NO_MOVE_REPLY_PAGE, 0, 0);
+                            last_touch_suppressed = 1;
+                            break;
+                        default:
+                            last_touch_suppressed = 0;
+                            break;
                     }
-                    last_touch = 1;
-                } else if (!last_touch_suppressed && (x != last_tx || y != last_ty)) {
-                    queue_input_event(MH_POINTER_MOVEEVENT, x, y, 0);
+                } else {
+                    last_touch_suppressed = 0;
                 }
-                last_tx = x; last_ty = y;
-            } else if (last_touch) {
+
                 if (!last_touch_suppressed) {
-                    queue_input_event(MH_POINTER_RELEASEEVENT, last_tx, last_ty, 0);
+                    queue_input_event(MH_POINTER_PRESSEVENT, x, y, 0);
                 }
-                last_touch = 0;
-                last_touch_suppressed = 0;
+                last_touch = 1;
+            } else if (!last_touch_suppressed && (x != last_tx || y != last_ty)) {
+                queue_input_event(MH_POINTER_MOVEEVENT, x, y, 0);
             }
-
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
-
-            if (handleCletEvent && eq_head != eq_tail) {
-                input_event *ev = &event_queue[eq_head];
-                eq_head = (eq_head + 1) % 16;
-                handleCletEvent(jni, NULL, ev->type, ev->p1, ev->p2, ev->p3);
+            last_tx = x; last_ty = y;
+        } else if (last_touch) {
+            if (!last_touch_suppressed) {
+                queue_input_event(MH_POINTER_RELEASEEVENT, last_tx, last_ty, 0);
             }
+            last_touch = 0;
+            last_touch_suppressed = 0;
+        }
 
-            if (NativeRender) NativeRender(jni, NULL);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
 
-            if (g_ui_status >= 0 && g_ui_status <= 1) splash_draw();
+        if (handleCletEvent && eq_head != eq_tail) {
+            input_event *ev = &event_queue[eq_head];
+            eq_head = (eq_head + 1) % 16;
+            handleCletEvent(jni, NULL, ev->type, ev->p1, ev->p2, ev->p3);
+        }
 
-            androidui_draw(g_ui_status, SCREEN_W, SCREEN_H);
+        if (NativeRender) NativeRender(jni, NULL);
+
+        if (g_ui_status >= 0 && g_ui_status <= 1) splash_draw();
+
+        androidui_draw(g_ui_status, SCREEN_W, SCREEN_H);
 
 #ifdef LOCK_FPS_30
-            sceDisplayWaitVblankStartMulti(2);
+        sceDisplayWaitVblankStartMulti(2);
 #endif
-            vglSwapBuffers(GL_FALSE);
+        vglSwapBuffers(GL_FALSE);
 
-            fps_count++;
-            SceUInt64 now = sceKernelGetProcessTimeWide();
-            if (now - fps_window_start >= 2000000) {
-                double secs = (now - fps_window_start) / 1000000.0;
-                game_log("[PERF] FPS=%.1f (frames=%d en %.2fs)\n", fps_count / secs, fps_count, secs);
-                fps_count = 0;
-                fps_window_start = now;
-            }
+        fps_count++;
+        SceUInt64 now = sceKernelGetProcessTimeWide();
+        if (now - fps_window_start >= 2000000) {
+            double secs = (now - fps_window_start) / 1000000.0;
+            game_log("[PERF] FPS=%.1f (frames=%d en %.2fs)\n", fps_count / secs, fps_count, secs);
+            fps_count = 0;
+            fps_window_start = now;
         }
     }
 
-    if (log_file) {
-        fclose(log_file);
-    }
+    if (log_file) fclose(log_file);
     sceKernelExitProcess(0);
     return 0;
 }
