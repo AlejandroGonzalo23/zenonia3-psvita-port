@@ -592,11 +592,8 @@ int dladdr_fake(const void *addr, void *info) {
 }
 
 // Stubs de C++/GCC
-void __cxa_begin_cleanup() {}
-void __cxa_call_unexpected() {}
 int __cxa_guard_acquire(int* g) { return !*(char*)(g); }
 void __cxa_guard_release(int* g) { *(char*)g = 1; }
-void __cxa_type_match() {}
 void __gnu_Unwind_Find_exidx() {}
 void __stack_chk_fail() {}
 
