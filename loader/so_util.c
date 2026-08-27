@@ -218,7 +218,7 @@ int _so_load(so_module *mod, SceUID so_blockid, void *so_data, uintptr_t load_ad
  * @brief Use the .text segment padding as a code cave Word-align it to make it simpler for instruction arena allocation.
  */
                 mod->cave_size = ALIGN_MEM(prog_size - mod->phdr[i].p_memsz, 0x4);
-                mod->cave_base = mod->cave_head = prog_data + mod->phdr[i].p_memsz;
+                mod->cave_base = mod->cave_head = (uintptr_t)(prog_data + mod->phdr[i].p_memsz);
                 mod->cave_base = ALIGN_MEM(mod->cave_base, 0x4);
                 mod->cave_head = mod->cave_base;
 
