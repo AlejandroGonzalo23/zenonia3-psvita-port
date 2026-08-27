@@ -163,7 +163,9 @@ static void JNICALL Zenonia_ReleaseFloatArrayElements(JNIEnv *env, jfloatArray a
     (void)env; (void)array; (void)elems; (void)mode;
 }
 
-/* --- Stubs JNIEnv --- */
+/* --- Identificadores y llamadas a métodos JNI --- */
+
+static const char *g_apk_path = "ux0:data/zenonia3";
 
 static jclass JNICALL Zenonia_FindClass(JNIEnv *env, const char *name) {
     (void)env;
@@ -180,7 +182,32 @@ static jmethodID JNICALL Zenonia_GetMethodID(JNIEnv *env, jclass clazz, const ch
 static jmethodID JNICALL Zenonia_GetStaticMethodID(JNIEnv *env, jclass clazz, const char *name, const char *sig) {
     (void)env; (void)clazz;
     game_log("[JNI] GetStaticMethodID: %s (sig: %s)\n", name ? name : "(null)", sig ? sig : "(null)");
+    if (name && (strstr(name, "getApkPath") || strstr(name, "getPackageCodePath") || strstr(name, "getFilesDir"))) {
+        return (jmethodID)0x10;
+    }
     return (jmethodID)0x1;
+}
+
+static jobject JNICALL Zenonia_CallStaticObjectMethod(JNIEnv *env, jclass clazz, jmethodID methodID, ...) {
+    (void)env; (void)clazz;
+    if (methodID == (jmethodID)0x10) {
+        return (jobject)g_apk_path;
+    }
+    return NULL;
+}
+
+static void JNICALL Zenonia_CallStaticVoidMethod(JNIEnv *env, jclass clazz, jmethodID methodID, ...) {
+    (void)env; (void)clazz; (void)methodID;
+}
+
+static jboolean JNICALL Zenonia_CallStaticBooleanMethod(JNIEnv *env, jclass clazz, jmethodID methodID, ...) {
+    (void)env; (void)clazz; (void)methodID;
+    return JNI_FALSE;
+}
+
+static jint JNICALL Zenonia_CallStaticIntMethod(JNIEnv *env, jclass clazz, jmethodID methodID, ...) {
+    (void)env; (void)clazz; (void)methodID;
+    return 0;
 }
 
 static jstring JNICALL Zenonia_NewStringUTF(JNIEnv *env, const char *bytes) {
@@ -220,6 +247,10 @@ static struct JNINativeInterface zenonia_jni_native_interface = {
     .FindClass = Zenonia_FindClass,
     .GetMethodID = Zenonia_GetMethodID,
     .GetStaticMethodID = Zenonia_GetStaticMethodID,
+    .CallStaticObjectMethod = Zenonia_CallStaticObjectMethod,
+    .CallStaticVoidMethod = Zenonia_CallStaticVoidMethod,
+    .CallStaticBooleanMethod = Zenonia_CallStaticBooleanMethod,
+    .CallStaticIntMethod = Zenonia_CallStaticIntMethod,
     .NewStringUTF = Zenonia_NewStringUTF,
     .GetStringUTFChars = Zenonia_GetStringUTFChars,
     .ReleaseStringUTFChars = Zenonia_ReleaseStringUTFChars,
@@ -251,5 +282,5 @@ JavaVM jvm = (JavaVM)&zenonia_jvm_ptr;
 
 void zenonia_install_array_hooks(void) {}
 void jni_init(void) {
-    game_log("[JNI] Tablas JNI con doble indireccion inicializadas.\n");
+    game_log("[JNI] Tablas JNI inicializadas con soporte de metodos estaticos.\n");
 }
