@@ -680,7 +680,7 @@ void Zenonia_GFA_SetStringFromUnicode(jmethodID id, va_list args) {
 /**
  * @brief (F[I)I -- maxWidth, wwPositions[].
  */
-desreferencia SIN chequ....
+/* *desreferencia SIN chequ....
  * @note Ver docs/loader/java.md para el razonamiento de diseño.
  */
 static JavaDynArray *gfa_persistent_floats(JavaDynArray **slot, int len) {
