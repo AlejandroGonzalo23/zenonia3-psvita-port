@@ -286,17 +286,33 @@ int main() {
 
         Game_JNI_OnLoad = (void *)so_symbol(&zenonia3_mod, "JNI_OnLoad");
 
-        // Fallback de busqueda estatica
+        // Resolucion con nombres directos y C++ Mangled
         NativeInitDeviceInfo = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeInitDeviceInfo");
+        if (!NativeInitDeviceInfo)
+            NativeInitDeviceInfo = (void *)so_symbol(&zenonia3_mod, "_Z20NativeInitDeviceInfoP7_JNIEnvP8_jobjectii");
+
         NativeInitWithBufferSize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeInitWithBufferSize");
+        if (!NativeInitWithBufferSize)
+            NativeInitWithBufferSize = (void *)so_symbol(&zenonia3_mod, "_Z24NativeInitWithBufferSizeP7_JNIEnvP8_jobjectii");
+
         NativeRender = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeRender");
+        if (!NativeRender)
+            NativeRender = (void *)so_symbol(&zenonia3_mod, "_Z12NativeRenderP7_JNIEnvP8_jobject");
+
         NativeResize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResize");
+        if (!NativeResize)
+            NativeResize = (void *)so_symbol(&zenonia3_mod, "_Z12NativeResizeP7_JNIEnvP8_jobjectii");
+
         NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResumeClet");
+        if (!NativeResumeClet)
+            NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "_Z16NativeResumeCletP7_JNIEnvP8_jobject");
+
         handleCletEvent = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_handleCletEvent");
+        if (!handleCletEvent)
+            handleCletEvent = (void *)so_symbol(&zenonia3_mod, "_Z15handleCletEventP7_JNIEnvP8_jobjectiiii");
 
         zenonia_install_hide_dpad_hook(&zenonia3_mod);
 
-        // Llamar a JNI_OnLoad primero para que ejecute RegisterNatives
         game_log("Llamando JNI_OnLoad...\n");
         if (Game_JNI_OnLoad) {
             Game_JNI_OnLoad(jvm, NULL);
