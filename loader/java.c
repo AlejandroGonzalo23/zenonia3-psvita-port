@@ -223,7 +223,9 @@ static void JNICALL Zenonia_ReleaseStringUTFChars(JNIEnv *env, jstring string, c
 
 static jint JNICALL Zenonia_GetEnv(JavaVM *vm, void **env, jint version) {
     (void)vm; (void)version;
-    *env = (void *)&jni;
+    if (env) {
+        *env = (void *)jni;
+    }
     return JNI_OK;
 }
 
