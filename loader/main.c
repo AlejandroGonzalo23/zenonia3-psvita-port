@@ -293,12 +293,30 @@ int main() {
         JNIEnv *jniEnv = &jni;
 
         Game_JNI_OnLoad = (void *)so_symbol(&zenonia3_mod, "JNI_OnLoad");
+
+        // Fallbacks de nombres JNI para Zenonia 3
         NativeInitDeviceInfo = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeInitDeviceInfo");
+        if (!NativeInitDeviceInfo)
+            NativeInitDeviceInfo = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_initDeviceInfo");
+
         NativeInitWithBufferSize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeInitWithBufferSize");
+        if (!NativeInitWithBufferSize)
+            NativeInitWithBufferSize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_initWithBufferSize");
+
         NativeRender = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeRender");
+        if (!NativeRender)
+            NativeRender = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_render");
+
         NativeResize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResize");
+        if (!NativeResize)
+            NativeResize = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_resize");
+
         NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_NativeResumeClet");
+        if (!NativeResumeClet)
+            NativeResumeClet = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_resumeClet");
+
         handleCletEvent = (void *)so_symbol(&zenonia3_mod, "Java_com_gamevil_nexus2_Natives_handleCletEvent");
+
         zenonia_install_hide_dpad_hook(&zenonia3_mod);
 
         game_log("Symbols: JNI_OnLoad=%p NativeInitDeviceInfo=%p NativeInitWithBufferSize=%p NativeRender=%p NativeResize=%p NativeResumeClet=%p handleCletEvent=%p\n",
@@ -307,12 +325,16 @@ int main() {
 
         game_log("Llamando JNI_OnLoad...\n");
         if (Game_JNI_OnLoad) Game_JNI_OnLoad(&jvm, NULL);
+
         game_log("Llamando NativeInitWithBufferSize(%d,%d)...\n", GAME_W, GAME_H);
         if (NativeInitWithBufferSize) NativeInitWithBufferSize(jniEnv, NULL, GAME_W, GAME_H);
+
         game_log("Llamando NativeInitDeviceInfo(%d,%d)...\n", GAME_W, GAME_H);
         if (NativeInitDeviceInfo) NativeInitDeviceInfo(jniEnv, NULL, GAME_W, GAME_H);
-        game_log("Llamando NativeResize(%d,%d)...\n", SCREEN_W, SCREEN_H);
-        if (NativeResize) NativeResize(jniEnv, NULL, SCREEN_W, SCREEN_H);
+
+        game_log("Llamando NativeResize(%d,%d)...\n", GAME_W, GAME_H);
+        if (NativeResize) NativeResize(jniEnv, NULL, GAME_W, GAME_H);
+
         game_log("Llamando NativeResumeClet...\n");
         if (NativeResumeClet) NativeResumeClet(jniEnv, NULL);
 
