@@ -1,7 +1,8 @@
 /**
  * @brief main.c ARMv7 Shared Libraries loader. Zenonia 3. Same engine (Gamevil Nexus2/"Clet") as Zenonia 2.
  */
-
+#include <psp2/io/stat.h>
+#include <kubridge.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/io/dirent.h>
