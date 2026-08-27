@@ -24,48 +24,32 @@
 extern void game_log(const char *fmt, ...);
 extern volatile int g_ui_status;
 
-/**
- * @brief The logo/title/menu (ui_status 0-2, see ZenoniaUIControllerView.java: UI_STATUS_LOGO/TITLE/MAINMENU) looks white and then black (confirmed).
- */
 static int zenonia_verbose_ui(void) {
     return g_ui_status >= 0 && g_ui_status <= 2;
 }
 
-/**
- * @brief offset committed in GVUIController::GVUIController() (out_ghidra.c:26369, `memset(this+8,0,400); *(int*)(this+0x19c)=0;`) and reused.
- */
 #ifdef ZENONIA_HIDE_DPAD_UI
 static so_hook g_player_controller_ctor_hook;
-
-/**
- * @brief offset committed in GVUIController::GVUIController() (out_ghidra.c:26369, `memset(this+8,0,400); *(int*)(this+0x19c)=0;`) and reused.
- */
 #define GVUI_CONTROLLER_ACTIVE_COUNT_OFFSET 0x19c
 
 static void GVUIPlayerController_ctor_hook(void *this) {
-/**
- * @brief Call AFTER so_relocate/so_resolve (you need the module already with dynsym/dynstr resolved, see so_symbol()) and BEFORE the first call to.
- */
     so_unhook(&g_player_controller_ctor_hook);
     ((void (*)(void *)) g_player_controller_ctor_hook.thumb_addr)(this);
     *(int *)((char *) this + GVUI_CONTROLLER_ACTIVE_COUNT_OFFSET) = 0;
-    game_log("[HideDpad] GVUIPlayerController construido en %p -- contador de objetos activos puesto a 0 (Draw/touch de la cruceta y los 5 botones de accion deshabilitados)\n", this);
+    game_log("[HideDpad] GVUIPlayerController construido en %p -- controles tactiles deshabilitados\n", this);
 }
 #endif
 
-/**
- * @brief Call AFTER so_relocate/so_resolve (you need the module already with dynsym/dynstr resolved, see so_symbol()) and BEFORE the first call to.
- */
 void zenonia_install_hide_dpad_hook(so_module *mod) {
 #ifdef ZENONIA_HIDE_DPAD_UI
     uintptr_t ctor_addr = so_symbol(mod, "_ZN20GVUIPlayerControllerC2Ev");
     if (!ctor_addr) {
-        game_log("[HideDpad] simbolo _ZN20GVUIPlayerControllerC2Ev no encontrado -- cruceta/botones NO se ocultan\n");
+        game_log("[HideDpad] simbolo _ZN20GVUIPlayerControllerC2Ev no encontrado\n");
         return;
     }
     g_player_controller_ctor_hook = hook_addr(ctor_addr, (uintptr_t) GVUIPlayerController_ctor_hook);
     so_flush_caches(mod);
-    game_log("[HideDpad] hook instalado en GVUIPlayerController::ctor (0x%08x)\n", (unsigned int) ctor_addr);
+    game_log("[HideDpad] hook instalado en GVUIPlayerController::ctor\n");
 #else
     (void) mod;
 #endif
@@ -77,9 +61,6 @@ int* __errno(void) {
     return &dummy_errno;
 }
 
-/**
- * @brief Wrappers for fixed point OpenGL (GLES1).
- */
 void glClearColorx_wrapper(int r, int g, int b, int a) {
     glClearColor(r / 65536.0f, g / 65536.0f, b / 65536.0f, a / 65536.0f);
 }
@@ -88,9 +69,6 @@ void glTexParameterx_wrapper(GLenum target, GLenum pname, int param) {
     glTexParameteri(target, pname, param);
 }
 
-/**
- * @brief 4-strategy A/B testing for the RGB565 software framebuffer that the motor uploads per texture (see CLAUDE.md / CMakeLists.txt).
- */
 #if defined(RGB565_MODE_NEON)
 static void convert_rgb565_to_rgba8888_neon(const uint16_t *src, uint8_t *dst, int npix) {
     int i = 0;
@@ -116,9 +94,6 @@ static void convert_rgb565_to_rgba8888_neon(const uint16_t *src, uint8_t *dst, i
 }
 #endif
 
-/**
- * @brief Conversion buffer reused between calls.
- */
 void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     static uint8_t *conv_buf = NULL;
     static int conv_buf_cap = 0;
@@ -128,10 +103,7 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     int npix = width * height;
     if (npix * 4 > conv_buf_cap) {
         uint8_t *new_buf = (uint8_t *)realloc(conv_buf, npix * 4);
-        if (!new_buf) {
-            game_log("[GL] convert_rgb565_to_rgba8888: realloc fallo para %d bytes\n", npix * 4);
-            return NULL;
-        }
+        if (!new_buf) return NULL;
         conv_buf = new_buf;
         conv_buf_cap = npix * 4;
     }
@@ -155,7 +127,7 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
     }
 #elif defined(RGB565_MODE_NEON)
     convert_rgb565_to_rgba8888_neon(src, dst, npix);
-#else // RGB565_MODE_SCALAR
+#else
     for (int i = 0; i < npix; i++) {
         uint16_t p = src[i];
         dst[i*4 + 0] = ((p >> 11) & 0x1F) * 255 / 31;
@@ -164,38 +136,11 @@ void *convert_rgb565_to_rgba8888(const void *pixels, int width, int height) {
         dst[i*4 + 3] = 255;
     }
 #endif
-
-    static int conv_log = 0;
-    if (conv_log < 10) {
-        uint16_t min_p = 0xFFFF, max_p = 0x0000;
-        for (int i = 0; i < npix; i++) {
-            if (src[i] < min_p) min_p = src[i];
-            if (src[i] > max_p) max_p = src[i];
-        }
-        game_log("[GL] convert_rgb565_to_rgba8888: min=%04x max=%04x\n", min_p, max_p);
-        conv_log++;
-    }
-
     return dst;
 }
 
-/**
- * @brief The engine uploads its internal software framebuffer (400x240, see Phase 1 of the plan) in RGB565.
- */
 void glTexImage2D_wrapper(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void *pixels) {
-    static int img_log = 0;
-    if (img_log < 10) {
-        game_log("[GL] glTexImage2D target=%x intFmt=%x w=%d h=%d format=%x type=%x pixels=%p\n",
-                 target, internalformat, width, height, format, type, pixels);
-        img_log++;
-    }
-    glGetError();
-
     if (format == GL_RGB && type == GL_UNSIGNED_SHORT_5_6_5) {
-        if (pixels && img_log < 20) {
-            uint16_t *p = (uint16_t *)pixels;
-            game_log("  -> First 4 pixels: %04x %04x %04x %04x\n", p[0], p[1], p[2], p[3]);
-        }
 #if defined(RGB565_MODE_NATIVE)
         glTexImage2D(target, level, GL_RGB, width, height, border, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, pixels);
 #else
@@ -205,26 +150,11 @@ void glTexImage2D_wrapper(GLenum target, GLint level, GLint internalformat, GLsi
     } else {
         glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
     }
-
     glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    GLenum err = glGetError();
-    if (err != GL_NO_ERROR) game_log("[GL] glTexImage2D ERROR: %x\n", err);
 }
 
 void glTexSubImage2D_wrapper(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void *pixels) {
-    static int subimg_log = 0;
-    if (subimg_log < 10) {
-        game_log("[GL] glTexSubImage2D target=%x w=%d h=%d format=%x type=%x\n", target, width, height, format, type);
-        if (type == GL_UNSIGNED_SHORT_5_6_5 && pixels) {
-            uint16_t *p = (uint16_t*)pixels;
-            game_log("  -> First 4 pixels: %04x %04x %04x %04x\n", p[0], p[1], p[2], p[3]);
-        }
-        subimg_log++;
-    }
-    glGetError();
-
     if (format == GL_RGB && type == GL_UNSIGNED_SHORT_5_6_5) {
 #if defined(RGB565_MODE_NATIVE)
         glTexSubImage2D(target, level, xoffset, yoffset, width, height, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, pixels);
@@ -235,9 +165,6 @@ void glTexSubImage2D_wrapper(GLenum target, GLint level, GLint xoffset, GLint yo
     } else {
         glTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, pixels);
     }
-
-    GLenum err = glGetError();
-    if (err != GL_NO_ERROR) game_log("[GL] glTexSubImage2D ERROR: %x\n", err);
 }
 
 static const int32_t *pending_fixed_verts = NULL;
@@ -274,21 +201,12 @@ static void fixed_to_float_neon(const int32_t *src, GLfloat *dst, int total_elem
 #endif
 
 void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
-    static int draw_count = 0;
-    if (draw_count < 10) {
-        game_log("[GL] glDrawArrays mode=%x first=%d count=%d\n", mode, first, count);
-        draw_count++;
-    }
-
     if (pending_fixed_verts) {
         int needed_verts = first + count;
         int needed_floats = needed_verts * pending_fixed_size;
         if (needed_floats > fixed_vert_buf_cap) {
             GLfloat *new_buf = (GLfloat *)realloc(fixed_vert_buf, needed_floats * sizeof(GLfloat));
-            if (!new_buf) {
-                game_log("[GL] glDrawArrays: realloc de fixed_vert_buf fallo (%d floats)\n", needed_floats);
-                return;
-            }
+            if (!new_buf) return;
             fixed_vert_buf = new_buf;
             fixed_vert_buf_cap = needed_floats;
         }
@@ -302,9 +220,7 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
             for (int i = 0; i < needed_verts; i++) {
                 const int32_t *src = pending_fixed_verts + i * stride_elems;
                 GLfloat *dst = fixed_vert_buf + i * pending_fixed_size;
-                for (int c = 0; c < pending_fixed_size; c++) {
-                    dst[c] = src[c] / 65536.0f;
-                }
+                for (int c = 0; c < pending_fixed_size; c++) dst[c] = src[c] / 65536.0f;
             }
         }
         glVertexPointer(pending_fixed_size, GL_FLOAT, 0, fixed_vert_buf);
@@ -315,10 +231,7 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
         int needed_floats = needed_verts * pending_fixed_color_size;
         if (needed_floats > fixed_color_buf_cap) {
             GLfloat *new_buf = (GLfloat *)realloc(fixed_color_buf, needed_floats * sizeof(GLfloat));
-            if (!new_buf) {
-                game_log("[GL] glDrawArrays: realloc de fixed_color_buf fallo (%d floats)\n", needed_floats);
-                return;
-            }
+            if (!new_buf) return;
             fixed_color_buf = new_buf;
             fixed_color_buf_cap = needed_floats;
         }
@@ -332,9 +245,7 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
             for (int i = 0; i < needed_verts; i++) {
                 const int32_t *src = pending_fixed_colors + i * stride_elems;
                 GLfloat *dst = fixed_color_buf + i * pending_fixed_color_size;
-                for (int c = 0; c < pending_fixed_color_size; c++) {
-                    dst[c] = src[c] / 65536.0f;
-                }
+                for (int c = 0; c < pending_fixed_color_size; c++) dst[c] = src[c] / 65536.0f;
             }
         }
         glColorPointer(pending_fixed_color_size, GL_FLOAT, 0, fixed_color_buf);
@@ -345,26 +256,21 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
         int needed_floats = needed_verts * pending_fixed_texcoord_size;
         if (needed_floats > fixed_texcoord_buf_cap) {
             GLfloat *new_buf = (GLfloat *)realloc(fixed_texcoord_buf, needed_floats * sizeof(GLfloat));
-            if (!new_buf) {
-                game_log("[GL] glDrawArrays: realloc de fixed_texcoord_buf fallo (%d floats)\n", needed_floats);
-                return;
-            }
+            if (!new_buf) return;
             fixed_texcoord_buf = new_buf;
             fixed_texcoord_buf_cap = needed_floats;
         }
         int stride_elems = pending_fixed_texcoord_stride > 0 ? pending_fixed_texcoord_stride / sizeof(int32_t) : pending_fixed_texcoord_size;
 #ifdef OPTIMIZE_NEON_FIXED
         if (stride_elems == pending_fixed_texcoord_size) {
-            fixed_to_float_neon(pending_fixed_texcoords, fixed_texcoord_buf, needed_verts * pending_fixed_texcoord_size);
+            fixed_to_float_neon(pending_fixed_texcoords, fixed_texcoord_buf, needed_verts * pending_fixed_size);
         } else
 #endif
         {
             for (int i = 0; i < needed_verts; i++) {
                 const int32_t *src = pending_fixed_texcoords + i * stride_elems;
                 GLfloat *dst = fixed_texcoord_buf + i * pending_fixed_texcoord_size;
-                for (int c = 0; c < pending_fixed_texcoord_size; c++) {
-                    dst[c] = src[c] / 65536.0f;
-                }
+                for (int c = 0; c < pending_fixed_texcoord_size; c++) dst[c] = src[c] / 65536.0f;
             }
         }
         glTexCoordPointer(pending_fixed_texcoord_size, GL_FLOAT, 0, fixed_texcoord_buf);
@@ -374,200 +280,87 @@ void glDrawArrays_wrapper(GLenum mode, GLint first, GLsizei count) {
 }
 
 void glTexEnvf_wrapper(GLenum target, GLenum pname, GLfloat param) {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glTexEnvf target=%x pname=%x param=%f ui_status=%d\n", target, pname, param, g_ui_status);
-        log++;
-    }
     glTexEnvf(target, pname, param);
 }
 
 void glBlendFunc_wrapper(GLenum sfactor, GLenum dfactor) {
-    if (zenonia_verbose_ui()) {
-        game_log("[GL] glBlendFunc sfactor=%x dfactor=%x ui_status=%d\n", sfactor, dfactor, g_ui_status);
-    }
     glBlendFunc(sfactor, dfactor);
 }
 
 void glEnable_wrapper(GLenum cap) {
-    static int enable_log = 0;
-    if (enable_log < 20) {
-        game_log("[GL] glEnable cap=%x\n", cap);
-        enable_log++;
-    }
     glEnable(cap);
 }
 
 void glDisable_wrapper(GLenum cap) {
-    static int disable_log = 0;
-    if (disable_log < 20) {
-        game_log("[GL] glDisable cap=%x\n", cap);
-        disable_log++;
-    }
     glDisable(cap);
 }
 
 void glTexCoordPointer_wrapper(GLint size, GLenum type, GLsizei stride, const void *pointer) {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glTexCoordPointer size=%d type=%x stride=%d pointer=%p\n", size, type, stride, pointer);
-        log++;
-    }
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-    static int log_uvs = 0;
-    if (pointer && log_uvs < 20) {
-        if (type == GL_FIXED) {
-            int32_t *uv = (int32_t *)pointer;
-            game_log("  -> UVs Fixed (first 6): (%.2f, %.2f) (%.2f, %.2f) (%.2f, %.2f)\n",
-                     uv[0]/65536.0f, uv[1]/65536.0f, uv[2]/65536.0f, uv[3]/65536.0f, uv[4]/65536.0f, uv[5]/65536.0f);
-        } else {
-            float *uv = (float *)pointer;
-            game_log("  -> UVs Float (first 6): (%.2f, %.2f) (%.2f, %.2f) (%.2f, %.2f)\n",
-                     uv[0], uv[1], uv[2], uv[3], uv[4], uv[5]);
-        }
-        log_uvs++;
-    }
-
     if (type == GL_FIXED) {
         pending_fixed_texcoords = (const int32_t *)pointer;
         pending_fixed_texcoord_size = size;
         pending_fixed_texcoord_stride = stride;
         return;
     }
-
     pending_fixed_texcoords = NULL;
     glTexCoordPointer(size, type, stride, pointer);
 }
 
 void glColorPointer_wrapper(GLint size, GLenum type, GLsizei stride, const void *pointer) {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glColorPointer size=%d type=%x stride=%d pointer=%p\n", size, type, stride, pointer);
-        log++;
-    }
     glEnableClientState(GL_COLOR_ARRAY);
-    static int log_colors = 0;
-    if (pointer && (log_colors < 20 || zenonia_verbose_ui())) {
-        if (type == GL_FIXED) {
-            int32_t *c = (int32_t *)pointer;
-            game_log("  -> Colors Fixed (first 4): (%d, %d, %d, %d) ui_status=%d\n", c[0], c[1], c[2], c[3], g_ui_status);
-        } else if (type == GL_UNSIGNED_BYTE) {
-            uint8_t *c = (uint8_t *)pointer;
-            game_log("  -> Colors UByte (first 4): (%d, %d, %d, %d) ui_status=%d\n", c[0], c[1], c[2], c[3], g_ui_status);
-        } else {
-            float *c = (float *)pointer;
-            game_log("  -> Colors Float (first 4): (%.2f, %.2f, %.2f, %.2f) ui_status=%d\n", c[0], c[1], c[2], c[3], g_ui_status);
-        }
-        log_colors++;
-    }
-
     if (type == GL_FIXED) {
         pending_fixed_colors = (const int32_t *)pointer;
         pending_fixed_color_size = size;
         pending_fixed_color_stride = stride;
         return;
     }
-
     pending_fixed_colors = NULL;
     glColorPointer(size, type, stride, pointer);
 }
 
 void glVertexPointer_wrapper(GLint size, GLenum type, GLsizei stride, const void *pointer) {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glVertexPointer size=%d type=%x stride=%d pointer=%p\n", size, type, stride, pointer);
-        log++;
-    }
     glEnableClientState(GL_VERTEX_ARRAY);
-    static int log_verts = 0;
-    if (pointer && log_verts < 20) {
-        if (type == GL_FIXED) {
-            int32_t *v = (int32_t *)pointer;
-            game_log("  -> Verts Fixed (first 6): (%d, %d) (%d, %d) (%d, %d)\n",
-                     v[0], v[1], v[2], v[3], v[4], v[5]);
-        } else {
-            float *v = (float *)pointer;
-            game_log("  -> Verts Float (first 6): (%.2f, %.2f) (%.2f, %.2f) (%.2f, %.2f)\n",
-                     v[0], v[1], v[2], v[3], v[4], v[5]);
-        }
-        log_verts++;
-    }
-
     if (type == GL_FIXED) {
         pending_fixed_verts = (const int32_t *)pointer;
         pending_fixed_size = size;
         pending_fixed_stride = stride;
         return;
     }
-
     pending_fixed_verts = NULL;
     glVertexPointer(size, type, stride, pointer);
 }
 
 void glEnableClientState_wrapper(GLenum array) {
-    static int enable_cs_log = 0;
-    if (enable_cs_log < 10) {
-        game_log("[GL] glEnableClientState array=%x\n", array);
-        enable_cs_log++;
-    }
     glEnableClientState(array);
 }
 
 void glDisableClientState_wrapper(GLenum array) {
-    static int disable_cs_log = 0;
-    if (disable_cs_log < 10) {
-        game_log("[GL] glDisableClientState array=%x\n", array);
-        disable_cs_log++;
-    }
     glDisableClientState(array);
 }
 
 void glMatrixMode_wrapper(GLenum mode) {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glMatrixMode mode=%x\n", mode);
-        log++;
-    }
     glMatrixMode(mode);
 }
 
 void glLoadIdentity_wrapper() {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glLoadIdentity\n");
-        log++;
-    }
     glLoadIdentity();
 }
 
 void glViewport_wrapper(GLint x, GLint y, GLsizei width, GLsizei height) {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glViewport x=%d y=%d w=%d h=%d (Forcing 960x544)\n", x, y, width, height);
-        log++;
-    }
+    (void)x; (void)y; (void)width; (void)height;
     glViewport(0, 0, 960, 544);
 }
 
 void glOrthof_wrapper(GLfloat left, GLfloat right, GLfloat bottom, GLfloat top, GLfloat zNear, GLfloat zFar) {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glOrthof left=%.2f right=%.2f bottom=%.2f top=%.2f\n", left, right, bottom, top);
-        log++;
-    }
     glOrthof(left, right, bottom, top, zNear, zFar);
 }
 
 void glOrthox_wrapper(GLint left, GLint right, GLint bottom, GLint top, GLint zNear, GLint zFar) {
-    static int log = 0;
-    if (log < 10) {
-        game_log("[GL] glOrthox left=%d right=%d bottom=%d top=%d\n", left, right, bottom, top);
-        log++;
-    }
     glOrthof_wrapper(left / 65536.0f, right / 65536.0f, bottom / 65536.0f, top / 65536.0f, zNear / 65536.0f, zFar / 65536.0f);
 }
 
-// Helpers de memoria ARM EABI y Bionic libc
+// Memory & ABI Wrappers
 void *__aeabi_memset_impl(void *dest, size_t n, int c) {
     return memset(dest, c, n);
 }
@@ -591,7 +384,12 @@ int dladdr_fake(const void *addr, void *info) {
     return 0; 
 }
 
-// Stubs de C++/GCC
+// Declaraciones externas procedentes de libstdc++
+extern void __cxa_begin_cleanup(void);
+extern void __cxa_call_unexpected(void);
+extern void __cxa_type_match(void);
+
+// Stubs C++/GCC
 int __cxa_guard_acquire(int* g) { return !*(char*)(g); }
 void __cxa_guard_release(int* g) { *(char*)g = 1; }
 void __gnu_Unwind_Find_exidx() {}
@@ -647,11 +445,7 @@ int pthread_cond_broadcast_wrapper(pthread_cond_t *cond) {
 }
 
 void* malloc_wrapper(size_t size) {
-    void* ptr = malloc(size);
-    if (!ptr) {
-        game_log("[FakeJNI] MALLOC FAILED FOR SIZE %u\n", (unsigned int)size);
-    }
-    return ptr;
+    return malloc(size);
 }
 void free_wrapper(void* ptr) {
     free(ptr);
@@ -681,11 +475,6 @@ void translate_path(const char* in_path, char* out_path, size_t out_size) {
 FILE* fopen_hook(const char* path, const char* mode) {
     char new_path[256];
     translate_path(path, new_path, sizeof(new_path));
-    static int log = 0;
-    if (log < 10) {
-        game_log("[FakeJNI] fopen_hook: %s -> %s\n", path, new_path);
-        log++;
-    }
     return fopen(new_path, mode);
 }
 
@@ -711,20 +500,11 @@ typedef struct {
     uint64_t st_ino;
 } bionic_stat_t;
 
-_Static_assert(__builtin_offsetof(bionic_stat_t, st_mode) == 16, "bionic st_mode");
-_Static_assert(__builtin_offsetof(bionic_stat_t, st_size) == 48, "bionic st_size");
-
 int stat_hook(const char* path, void* statbuf) {
     char new_path[256];
     translate_path(path, new_path, sizeof(new_path));
-
     struct stat st;
     int res = stat(new_path, &st);
-    static int log = 0;
-    if (log < 10) {
-        game_log("[FakeJNI] stat_hook: %s -> %s = %d (size=%ld)\n", path, new_path, res, res == 0 ? (long) st.st_size : -1L);
-        log++;
-    }
     if (res == 0 && statbuf) {
         bionic_stat_t *bst = (bionic_stat_t *) statbuf;
         memset(bst, 0, sizeof(*bst));
@@ -747,11 +527,6 @@ int stat_hook(const char* path, void* statbuf) {
 int access_hook(const char* path, int amode) {
     char new_path[256];
     translate_path(path, new_path, sizeof(new_path));
-    static int log = 0;
-    if (log < 10) {
-        game_log("[FakeJNI] access_hook: %s -> %s\n", path, new_path);
-        log++;
-    }
     return access(new_path, amode);
 }
 
