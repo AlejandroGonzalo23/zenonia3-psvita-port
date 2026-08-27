@@ -19,6 +19,13 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Clone missing dependencies (FalsoJNI)
+        run: |
+          mkdir -p lib
+          if [ ! -d "lib/falso_jni" ]; then
+            git clone https://github.com/SonicMastr/FalsoJNI.git lib/falso_jni
+          fi
+
       - name: Build VPK
         run: |
           mkdir build && cd build
