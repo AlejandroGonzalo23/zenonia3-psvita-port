@@ -22,7 +22,7 @@ jobs:
       - name: Checkout FalsoJNI
         uses: actions/checkout@v4
         with:
-          repository: SonicMastr/FalsoJNI
+          repository: falsojni/FalsoJNI
           path: lib/falso_jni
 
       - name: Build VPK
