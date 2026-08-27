@@ -76,7 +76,6 @@ add_executable(${PROJECT_NAME}
   ./loader/androidui.c
   ./common/debugScreen.c
   ./lib/falso_jni/FalsoJNI.c
-  ./lib/falso_jni/FalsoJNI_ImplBridge.c
   ./lib/falso_jni/FalsoJNI_Logger.c
   ./lib/falso_jni/ConvertUTF.c
 )
